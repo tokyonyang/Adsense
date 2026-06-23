@@ -1,1 +1,50 @@
+name: daily-adsense-seo
 
+on:
+  workflow_dispatch:
+  schedule:
+    # 매일 08:30 KST = 23:30 UTC
+    - cron: "30 23 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  daily-adsense-seo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate SEO drafts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          WP_SITE_URL: ${{ secrets.WP_SITE_URL }}
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          WP_DEFAULT_STATUS: draft
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SITE_DESCRIPTION: ${{ vars.SITE_DESCRIPTION }}
+          GOOGLE_TRENDS_GEO: KR
+          BLOCKED_KEYWORDS: "도박,성인,의약품,치료,대출,주식추천,코인추천,불법,마약"
+        run: python main.py --max-keywords 10 --max-posts 3
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adsense-seo-reports
+          path: reports/*
+          retention-days: 30
