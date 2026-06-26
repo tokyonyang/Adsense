@@ -37,6 +37,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.dashboard.txt
 
-      - name: Run daily dashboard pipeline
+      - name: Preview event boost config
+        run: |
+          python -m app.jobs.run_event_boost_preview
+
+      - name: Run daily dashboard pipeline and Telegram report
         run: |
           python -m app.jobs.run_daily_pipeline
