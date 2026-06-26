@@ -1,45 +1,96 @@
-# AdSense SEO 운영 대시보드 v1.3 패치
+# AdSense SEO 운영 대시보드 v1.4 Supabase 연결 패치
 
-## 수정 내용
+## 이번 버전의 목표
 
-1. 키워드 수집 페이지 검색창 동작 추가
-   - 키워드, 출처, 카테고리, 상태 텍스트 기준으로 테이블 필터링
-   - 검색 결과 개수 표시
-   - 카테고리 필터와 검색어를 함께 적용
+Vercel 정적 대시보드에서 Supabase의 실제 데이터를 읽어옵니다.
 
-2. 대시보드 핫이슈 검색창 동작 추가
-   - 오늘의 핫이슈 테이블 검색 가능
+연결 대상:
 
-3. 실행 로그 상세 보기 개선
-   - 기존 알림 문구 제거
-   - `상세` 버튼 클릭 시 화면 안에서 상세 패널 표시
-   - 현재는 예시 로그이며, 실제 로그는 Supabase `dashboard_runs` 연결 후 표시 가능
-
-4. 실시간 연동 상태 안내 추가
-   - 현재 Vercel 페이지는 정적 HTML
-   - GitHub Actions는 자동 수집/텔레그램 전송
-   - 대시보드 실시간 데이터 조회는 다음 단계에서 Supabase 연결 필요
+```text
+trend_keywords
+sns_trends
+dashboard_runs
+```
 
 ## GitHub에 업로드할 파일
 
 ```text
 index.html
 dashboard/index.html
+dashboard_config.js
+dashboard/dashboard_config.js
 vercel.json
 ```
 
-## 적용 방법
+## Supabase에 실행할 SQL
+
+```text
+supabase/public_read_policy_v1_4.sql
+```
+
+Supabase SQL Editor에서 실행하세요.
+
+## anon public key 입력 방법
+
+Supabase에서:
+
+```text
+Project Settings
+→ API
+→ Project API keys
+→ anon public
+```
+
+값을 복사해서 아래 파일 두 곳에 넣으세요.
+
+```text
+dashboard_config.js
+dashboard/dashboard_config.js
+```
+
+수정 전:
+
+```javascript
+SUPABASE_ANON_KEY: "PASTE_SUPABASE_ANON_PUBLIC_KEY_HERE"
+```
+
+수정 후:
+
+```javascript
+SUPABASE_ANON_KEY: "eyJ..."
+```
+
+## 절대 하면 안 되는 것
+
+브라우저용 파일에 아래 값을 넣으면 안 됩니다.
+
+```text
+SUPABASE_SERVICE_ROLE_KEY
+service_role key
+```
+
+service role key는 GitHub Actions나 서버에서만 사용해야 합니다.
+
+## 적용 순서
 
 1. ZIP 압축 해제
-2. GitHub 레포 루트에 3개 파일 업로드/교체
-3. Commit changes
-4. Vercel 자동 재배포 확인
+2. `supabase/public_read_policy_v1_4.sql`을 Supabase SQL Editor에서 실행
+3. `dashboard_config.js`, `dashboard/dashboard_config.js`에 anon public key 입력
+4. GitHub에 파일 업로드/교체
+5. Commit changes
+6. Vercel 자동 재배포 확인
+7. Vercel 사이트 접속
+8. 대시보드 상단 상태가 `Supabase 실제 데이터 연결됨`으로 바뀌는지 확인
 
-## 다음 단계
+## 현재 한계
 
-v1.4에서 추천하는 작업:
+- 읽기 전용 연결입니다.
+- 수동 재수집 버튼은 아직 실제 API를 호출하지 않습니다.
+- 회원별 private 데이터는 아직 비활성화 상태입니다.
+- user_id가 null인 공용 운영 데이터만 읽습니다.
 
-- Supabase anon key 기반 읽기 전용 연결
-- `trend_keywords` 실제 데이터 표시
-- `sns_trends` 실제 데이터 표시
-- `dashboard_runs` 실제 로그 표시
+## 다음 단계 v1.5 추천
+
+- 실제 `economic_events` 캘린더 표시
+- 실제 `content_ideas` 작성글 후보 표시
+- 수동 재수집 버튼을 GitHub Actions dispatch 또는 FastAPI API와 연결
