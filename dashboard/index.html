@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AdSense SEO 운영 대시보드 v1.4</title>
+  <title>AdSense SEO 운영 대시보드 v1.4.1</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -1221,7 +1221,7 @@
     }
 
 
-    /* v1.4: Supabase 실제 데이터 읽기 연결 */
+    /* v1.4.1: Supabase 실제 데이터 읽기 연결 - 함수 스코프 오류 수정 */
     .supabase-status {
       border-radius: 16px;
       padding: 14px 16px;
@@ -1275,12 +1275,6 @@
     .supabase-status.error strong,
     .supabase-status.error p {
       color: #991b1b;
-    }
-
-    .sync-time {
-      color: #64748b;
-      font-size: 12px;
-      font-weight: 800;
     }
 
     .data-source-pill {
@@ -1446,10 +1440,10 @@
 
         <div class="supabase-status warning" id="supabaseStatusPanel">
           <div>
-            <strong id="supabaseStatusTitle">Supabase 연결 대기</strong>
-            <p id="supabaseStatusText">dashboard_config.js에 Supabase anon public key를 입력하면 실제 데이터를 읽어올 수 있습니다.</p>
+            <strong id="supabaseStatusTitle">Supabase 연결 준비 중</strong>
+            <p id="supabaseStatusText">dashboard_config.js 설정을 확인하고 실제 데이터를 불러올 준비를 합니다.</p>
           </div>
-          <span class="data-source-pill" id="supabaseStatusPill">목업 + 연결 준비</span>
+          <span class="data-source-pill" id="supabaseStatusPill">연결 확인 중</span>
         </div>
 
           <button class="btn-navigate" onclick="showPage('logs')">실행 로그 확인</button>
@@ -1651,7 +1645,7 @@
         </section>
 
         <div class="empty-note" style="margin-top:18px;">
-          v1.4 개선 완료: Supabase 실제 데이터 읽기 연결 구조를 추가했습니다. dashboard_config.js에 anon key를 입력하면 동기화됩니다.
+          v1.4.1 개선 완료: Supabase 실제 데이터 읽기 연결 함수 위치 오류를 수정했습니다.
         </div>
 
       </section>
@@ -3441,335 +3435,6 @@ action: 다음 실행에서 재시도하거나 모델/쿼터 상태를 확인하
       snsSearchInput.addEventListener("input", applySnsFilters);
     }
 
-
-    const CATEGORY_LABELS_V14 = {
-      economy: "경제·금융",
-      stock: "증권·투자",
-      realestate: "부동산·주거금융",
-      policy: "정책·지원금",
-      business: "산업·기업",
-      living: "생활·제도",
-      education: "교육·입시",
-      weather: "날씨·안전",
-      society: "사회",
-      global: "국제",
-      commerce: "쇼핑·상품",
-      fashion: "패션·뷰티",
-      it: "IT·AI",
-      other: "기타"
-    };
-
-    let supabaseRuntime = {
-      enabled: false,
-      lastLoadedAt: null,
-      keywords: [],
-      snsTrends: [],
-      runs: []
-    };
-
-    function getDashboardConfig() {
-      return window.DASHBOARD_CONFIG || {};
-    }
-
-    function isSupabaseConfigured() {
-      const config = getDashboardConfig();
-      return Boolean(
-        config.ENABLE_SUPABASE &&
-        config.SUPABASE_URL &&
-        config.SUPABASE_ANON_KEY &&
-        !String(config.SUPABASE_ANON_KEY).includes("PASTE") &&
-        String(config.SUPABASE_URL).startsWith("https://")
-      );
-    }
-
-    function updateSupabaseStatus(type, title, text, pill) {
-      const panel = document.getElementById("supabaseStatusPanel");
-      const titleEl = document.getElementById("supabaseStatusTitle");
-      const textEl = document.getElementById("supabaseStatusText");
-      const pillEl = document.getElementById("supabaseStatusPill");
-
-      if (!panel) return;
-
-      panel.classList.remove("connected", "warning", "error");
-      panel.classList.add(type || "warning");
-
-      if (titleEl) titleEl.textContent = title;
-      if (textEl) textEl.textContent = text;
-      if (pillEl) pillEl.textContent = pill || "";
-    }
-
-    async function supabaseSelect(table, query = "select=*") {
-      const config = getDashboardConfig();
-      const baseUrl = String(config.SUPABASE_URL || "").replace(/\/$/, "");
-      const url = `${baseUrl}/rest/v1/${table}?${query}`;
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          apikey: config.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${config.SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json"
-        }
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`${table} 조회 실패: ${response.status} ${text}`);
-      }
-
-      return await response.json();
-    }
-
-    function renderScoreDots(score) {
-      const n = Number(score || 0);
-      const hot = n >= 85 ? 3 : n >= 70 ? 2 : 1;
-      const mid = n >= 70 ? 2 : n >= 50 ? 2 : 1;
-      const good = 5 - hot - mid;
-      let html = '<div class="score">';
-      for (let i = 0; i < hot; i++) html += '<i class="bar hot"></i>';
-      for (let i = 0; i < mid; i++) html += '<i class="bar mid"></i>';
-      for (let i = 0; i < good; i++) html += '<i class="bar good"></i>';
-      html += '</div>';
-      return html;
-    }
-
-    function safetyBadge(value) {
-      const v = String(value || "safe");
-      if (v === "safe") return '<span class="badge green">안전</span>';
-      if (v === "caution") return '<span class="badge amber">주의</span>';
-      if (v === "official_check") return '<span class="badge amber">공식확인</span>';
-      if (v === "risky") return '<span class="badge red">위험</span>';
-      return '<span class="badge gray">후보</span>';
-    }
-
-    function statusBadge(value) {
-      const v = String(value || "candidate");
-      if (v === "selected" || v === "success") return '<span class="badge green">선정</span>';
-      if (v === "candidate" || v === "pending") return '<span class="badge gray">후보</span>';
-      if (v === "running") return '<span class="badge blue">실행중</span>';
-      if (v === "failed") return '<span class="badge red">실패</span>';
-      if (v === "partial_success") return '<span class="badge amber">부분성공</span>';
-      return `<span class="badge gray">${v}</span>`;
-    }
-
-    function renderKeywordTables(keywords) {
-      const sorted = [...keywords].sort((a, b) => Number(b.interest_score || 0) - Number(a.interest_score || 0));
-      const keywordTable = document.getElementById("keyword-table");
-      const issueTable = document.getElementById("dashboard-issue-table");
-
-      if (keywordTable && keywordTable.querySelector("tbody")) {
-        keywordTable.querySelector("tbody").innerHTML = sorted.map(item => {
-          const category = item.category || "other";
-          const categoryLabel = CATEGORY_LABELS_V14[category] || category;
-          return `
-            <tr data-category="${category}">
-              <td><input type="checkbox"></td>
-              <td><strong>${escapeHtml(item.keyword || "-")}</strong></td>
-              <td>${escapeHtml(item.source || "-")}</td>
-              <td>${escapeHtml(categoryLabel)}</td>
-              <td>${Number(item.approx_traffic || 0).toLocaleString()}+</td>
-              <td>${Number(item.naver_news_count || 0)}건</td>
-              <td>${Number(item.interest_score || item.content_score || 0).toFixed(0)}</td>
-              <td>${statusBadge(item.status)}</td>
-            </tr>
-          `;
-        }).join("");
-      }
-
-      if (issueTable && issueTable.querySelector("tbody")) {
-        issueTable.querySelector("tbody").innerHTML = sorted.slice(0, 12).map((item, idx) => {
-          const category = item.category || "other";
-          const categoryLabel = CATEGORY_LABELS_V14[category] || category;
-          const evidenceCount = Number(item.evidence_count || 0);
-          return `
-            <tr data-category="${category}">
-              <td>${idx + 1}</td>
-              <td><strong>${escapeHtml(item.keyword || "-")}</strong></td>
-              <td>${escapeHtml(categoryLabel)}</td>
-              <td>${renderScoreDots(item.interest_score)}</td>
-              <td>${Number(item.approx_traffic || 0).toLocaleString()}+</td>
-              <td>${Number(item.naver_news_count || 0).toLocaleString()}</td>
-              <td>${Number(item.datalab_score || 0).toFixed(0)}</td>
-              <td>${evidenceCount}건</td>
-              <td>${statusBadge(item.status)}</td>
-            </tr>
-          `;
-        }).join("");
-      }
-
-      const keywordCount = document.getElementById("kpiKeywordCount");
-      const issueCount = document.getElementById("kpiIssueCount");
-      if (keywordCount) keywordCount.textContent = String(keywords.length);
-      if (issueCount) issueCount.textContent = String(Math.min(sorted.length, 10));
-
-      refreshTableFilter("keyword-table");
-      refreshTableFilter("dashboard-issue-table");
-    }
-
-    function renderSnsTrends(trends) {
-      const table = document.getElementById("snsTrendTable");
-      if (!table || !table.querySelector("tbody")) return;
-
-      const sorted = [...trends].sort((a, b) => Number(b.trend_score || 0) - Number(a.trend_score || 0));
-      table.querySelector("tbody").innerHTML = sorted.map((item, idx) => {
-        const platform = item.platform || "-";
-        const category = item.category || "other";
-        const categoryLabel = CATEGORY_LABELS_V14[category] || category;
-        const keyword = item.hashtag || item.keyword || "-";
-        const spread = item.spread_signal === "hot" ? "급상승" : item.spread_signal === "rising" ? "상승" : "관심";
-        const spreadClass = item.spread_signal === "hot" ? "hot" : item.spread_signal === "rising" ? "up" : "mid";
-        return `
-          <tr data-platform="${escapeHtml(platform)}" data-category="${escapeHtml(category)}" data-keyword="${escapeHtml(keyword)}">
-            <td>${idx + 1}</td>
-            <td><strong>${escapeHtml(keyword)}</strong></td>
-            <td><div class="platform-pills"><span class="platform-pill">${escapeHtml(platform)}</span></div></td>
-            <td>${escapeHtml(categoryLabel)}</td>
-            <td><strong>${Number(item.trend_score || 0).toFixed(0)}</strong></td>
-            <td><span class="trend-signal ${spreadClass}">${spread}</span></td>
-            <td>${escapeHtml(item.content_usage || "-")}</td>
-            <td>${Number(item.commerce_score || 0).toFixed(0)}</td>
-            <td>${safetyBadge(item.adsense_safety)}</td>
-            <td><button class="btn-soft" onclick="selectSnsTrend('${escapeJs(keyword)}','${escapeJs(categoryLabel)}','${escapeJs(platform)}','실제 Supabase에서 불러온 SNS 트렌드입니다. 콘텐츠 전환은 다음 단계에서 연결합니다.','발행 전 근거자료와 정책 리스크를 확인하세요.')">상세</button></td>
-          </tr>
-        `;
-      }).join("");
-
-      if (typeof applySnsFilters === "function") applySnsFilters();
-    }
-
-    function renderDashboardRuns(runs) {
-      const timeline = document.getElementById("dashboardRunsTimeline") || document.querySelector("#page-logs .timeline");
-      if (!timeline) return;
-
-      supabaseRuntime.runs = runs || [];
-
-      timeline.innerHTML = (runs || []).slice(0, 20).map((run, idx) => {
-        const started = run.started_at ? new Date(run.started_at).toLocaleString("ko-KR") : "-";
-        return `
-          <div class="log-row">
-            <strong>${started}</strong>
-            <span>${escapeHtml(run.run_type || "-")}</span>
-            ${statusBadge(run.status)}
-            <span>${escapeHtml(run.error_message || summarizeRun(run))}</span>
-            <button class="btn-gray" onclick="openSupabaseRunDetail(${idx})">상세</button>
-          </div>
-        `;
-      }).join("");
-
-      const automationStatus = document.getElementById("kpiAutomationStatus");
-      if (automationStatus) {
-        const latest = runs && runs[0];
-        automationStatus.textContent = latest && latest.status === "failed" ? "확인" : "정상";
-      }
-    }
-
-    function summarizeRun(run) {
-      if (!run) return "실행 정보 없음";
-      if (run.summary && typeof run.summary === "object") {
-        const parts = [];
-        if (run.summary.inserted != null) parts.push(`inserted ${run.summary.inserted}`);
-        if (run.summary.message) parts.push(run.summary.message);
-        if (parts.length) return parts.join(" · ");
-      }
-      return `${run.run_type || "run"} 실행 기록`;
-    }
-
-    function openSupabaseRunDetail(index) {
-      const run = supabaseRuntime.runs[index];
-      if (!run) {
-        openLogDetail("full_pipeline");
-        return;
-      }
-
-      const panel = document.getElementById("logDetailPanel");
-      const title = document.getElementById("logDetailTitle");
-      const summary = document.getElementById("logDetailSummary");
-      const raw = document.getElementById("logDetailRaw");
-
-      if (!panel || !title || !summary || !raw) {
-        toast("로그 상세 영역을 찾지 못했습니다.");
-        return;
-      }
-
-      title.textContent = `${run.run_type || "실행"} 상세`;
-      summary.textContent = run.error_message || summarizeRun(run);
-      raw.textContent = JSON.stringify(run, null, 2);
-      panel.classList.add("show");
-      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function escapeJs(value) {
-      return String(value ?? "")
-        .replaceAll("\\", "\\\\")
-        .replaceAll("'", "\\'")
-        .replaceAll("\n", " ");
-    }
-
-    async function loadSupabaseDashboardData() {
-      if (!isSupabaseConfigured()) {
-        updateSupabaseStatus(
-          "warning",
-          "Supabase 설정 필요",
-          "dashboard_config.js에 SUPABASE_ANON_KEY를 입력하면 실제 데이터를 불러옵니다. 현재는 목업 데이터가 표시됩니다.",
-          "목업 데이터"
-        );
-        return;
-      }
-
-      try {
-        updateSupabaseStatus("warning", "Supabase 데이터 불러오는 중", "trend_keywords, sns_trends, dashboard_runs 데이터를 조회하고 있습니다.", "동기화 중");
-
-        const [keywords, snsTrends, runs] = await Promise.all([
-          supabaseSelect("trend_keywords", "select=*&order=created_at.desc&limit=100"),
-          supabaseSelect("sns_trends", "select=*&order=collected_at.desc&limit=100"),
-          supabaseSelect("dashboard_runs", "select=*&order=started_at.desc&limit=50")
-        ]);
-
-        supabaseRuntime.enabled = true;
-        supabaseRuntime.lastLoadedAt = new Date();
-        supabaseRuntime.keywords = keywords || [];
-        supabaseRuntime.snsTrends = snsTrends || [];
-        supabaseRuntime.runs = runs || [];
-
-        if (keywords && keywords.length) renderKeywordTables(keywords);
-        if (snsTrends && snsTrends.length) renderSnsTrends(snsTrends);
-        if (runs && runs.length) renderDashboardRuns(runs);
-
-        const syncText = supabaseRuntime.lastLoadedAt.toLocaleTimeString("ko-KR");
-        updateSupabaseStatus(
-          "connected",
-          "Supabase 실제 데이터 연결됨",
-          `최근 동기화: ${syncText} · 키워드 ${keywords.length}건 · SNS ${snsTrends.length}건 · 실행 로그 ${runs.length}건`,
-          "실제 데이터"
-        );
-      } catch (error) {
-        console.error(error);
-        updateSupabaseStatus(
-          "error",
-          "Supabase 데이터 조회 실패",
-          error.message || "RLS 정책, anon key, URL 설정을 확인하세요.",
-          "연결 오류"
-        );
-      }
-    }
-
-    function setupSupabaseAutoRefresh() {
-      const config = getDashboardConfig();
-      const refreshSeconds = Number(config.REFRESH_SECONDS || 0);
-      if (refreshSeconds > 0 && isSupabaseConfigured()) {
-        setInterval(loadSupabaseDashboardData, refreshSeconds * 1000);
-      }
-    }
-
     updateUserUI();
     }
 
@@ -3941,13 +3606,341 @@ action: 다음 실행에서 재시도하거나 모델/쿼터 상태를 확인하
       if (privacyEmail) privacyEmail.textContent = email;
     }
 
+
+    // v1.4.1 Supabase 연결 모듈: 전역 함수로 고정
+    (function () {
+      const CATEGORY_LABELS = {
+        economy: "경제·금융",
+        stock: "증권·투자",
+        realestate: "부동산·주거금융",
+        policy: "정책·지원금",
+        business: "산업·기업",
+        living: "생활·제도",
+        education: "교육·입시",
+        weather: "날씨·안전",
+        society: "사회",
+        global: "국제",
+        commerce: "쇼핑·상품",
+        fashion: "패션·뷰티",
+        it: "IT·AI",
+        other: "기타"
+      };
+
+      window.supabaseRuntime = {
+        enabled: false,
+        lastLoadedAt: null,
+        keywords: [],
+        snsTrends: [],
+        runs: []
+      };
+
+      function escapeHtmlLocal(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function escapeJsLocal(value) {
+        return String(value ?? "")
+          .replaceAll("\\", "\\\\")
+          .replaceAll("'", "\\'")
+          .replaceAll("\n", " ");
+      }
+
+      function getDashboardConfig() {
+        return window.DASHBOARD_CONFIG || {};
+      }
+
+      function isSupabaseConfigured() {
+        const config = getDashboardConfig();
+        return Boolean(
+          config.ENABLE_SUPABASE &&
+          config.SUPABASE_URL &&
+          config.SUPABASE_ANON_KEY &&
+          !String(config.SUPABASE_ANON_KEY).includes("PASTE") &&
+          String(config.SUPABASE_URL).startsWith("https://")
+        );
+      }
+
+      function updateSupabaseStatus(type, title, text, pill) {
+        const panel = document.getElementById("supabaseStatusPanel");
+        const titleEl = document.getElementById("supabaseStatusTitle");
+        const textEl = document.getElementById("supabaseStatusText");
+        const pillEl = document.getElementById("supabaseStatusPill");
+        if (!panel) return;
+
+        panel.classList.remove("connected", "warning", "error");
+        panel.classList.add(type || "warning");
+
+        if (titleEl) titleEl.textContent = title;
+        if (textEl) textEl.textContent = text;
+        if (pillEl) pillEl.textContent = pill || "";
+      }
+
+      async function supabaseSelect(table, query = "select=*") {
+        const config = getDashboardConfig();
+        const baseUrl = String(config.SUPABASE_URL || "").replace(/\/$/, "");
+        const url = `${baseUrl}/rest/v1/${table}?${query}`;
+
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            apikey: config.SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${config.SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`${table} 조회 실패: ${response.status} ${text}`);
+        }
+
+        return await response.json();
+      }
+
+      function statusBadge(value) {
+        const v = String(value || "candidate");
+        if (v === "selected" || v === "success") return '<span class="badge green">선정</span>';
+        if (v === "candidate" || v === "pending") return '<span class="badge gray">후보</span>';
+        if (v === "running") return '<span class="badge blue">실행중</span>';
+        if (v === "failed") return '<span class="badge red">실패</span>';
+        if (v === "partial_success") return '<span class="badge amber">부분성공</span>';
+        return `<span class="badge gray">${escapeHtmlLocal(v)}</span>`;
+      }
+
+      function safetyBadge(value) {
+        const v = String(value || "safe");
+        if (v === "safe") return '<span class="badge green">안전</span>';
+        if (v === "caution") return '<span class="badge amber">주의</span>';
+        if (v === "official_check") return '<span class="badge amber">공식확인</span>';
+        if (v === "risky") return '<span class="badge red">위험</span>';
+        return '<span class="badge gray">후보</span>';
+      }
+
+      function renderScoreDots(score) {
+        const n = Number(score || 0);
+        const bars = Math.max(1, Math.min(5, Math.ceil(n / 20)));
+        let html = '<div class="score">';
+        for (let i = 0; i < 5; i++) {
+          const cls = i < bars ? (n >= 85 ? "hot" : n >= 70 ? "mid" : "good") : "";
+          html += `<i class="bar ${cls}"></i>`;
+        }
+        html += '</div>';
+        return html;
+      }
+
+      function renderKeywordTables(keywords) {
+        const sorted = [...keywords].sort((a, b) => Number(b.interest_score || 0) - Number(a.interest_score || 0));
+        const keywordTable = document.getElementById("keyword-table");
+        const issueTable = document.getElementById("dashboard-issue-table");
+
+        if (keywordTable && keywordTable.querySelector("tbody")) {
+          keywordTable.querySelector("tbody").innerHTML = sorted.map(item => {
+            const category = item.category || "other";
+            const categoryLabel = CATEGORY_LABELS[category] || category;
+            return `
+              <tr data-category="${escapeHtmlLocal(category)}">
+                <td><input type="checkbox"></td>
+                <td><strong>${escapeHtmlLocal(item.keyword || "-")}</strong></td>
+                <td>${escapeHtmlLocal(item.source || "-")}</td>
+                <td>${escapeHtmlLocal(categoryLabel)}</td>
+                <td>${Number(item.approx_traffic || 0).toLocaleString()}+</td>
+                <td>${Number(item.naver_news_count || 0)}건</td>
+                <td>${Number(item.interest_score || item.content_score || 0).toFixed(0)}</td>
+                <td>${statusBadge(item.status)}</td>
+              </tr>
+            `;
+          }).join("");
+        }
+
+        if (issueTable && issueTable.querySelector("tbody")) {
+          issueTable.querySelector("tbody").innerHTML = sorted.slice(0, 12).map((item, idx) => {
+            const category = item.category || "other";
+            const categoryLabel = CATEGORY_LABELS[category] || category;
+            return `
+              <tr data-category="${escapeHtmlLocal(category)}">
+                <td>${idx + 1}</td>
+                <td><strong>${escapeHtmlLocal(item.keyword || "-")}</strong></td>
+                <td>${escapeHtmlLocal(categoryLabel)}</td>
+                <td>${renderScoreDots(item.interest_score || item.content_score)}</td>
+                <td>${Number(item.approx_traffic || 0).toLocaleString()}+</td>
+                <td>${Number(item.naver_news_count || 0).toLocaleString()}</td>
+                <td>${Number(item.datalab_score || 0).toFixed(0)}</td>
+                <td>${Number(item.evidence_count || 0)}건</td>
+                <td>${statusBadge(item.status)}</td>
+              </tr>
+            `;
+          }).join("");
+        }
+
+        const keywordCount = document.getElementById("kpiKeywordCount");
+        const issueCount = document.getElementById("kpiIssueCount");
+        if (keywordCount) keywordCount.textContent = String(keywords.length);
+        if (issueCount) issueCount.textContent = String(Math.min(sorted.length, 10));
+
+        if (typeof refreshTableFilter === "function") {
+          refreshTableFilter("keyword-table");
+          refreshTableFilter("dashboard-issue-table");
+        }
+      }
+
+      function renderSnsTrends(trends) {
+        const table = document.getElementById("snsTrendTable");
+        if (!table || !table.querySelector("tbody")) return;
+
+        const sorted = [...trends].sort((a, b) => Number(b.trend_score || 0) - Number(a.trend_score || 0));
+        table.querySelector("tbody").innerHTML = sorted.map((item, idx) => {
+          const platform = item.platform || "-";
+          const category = item.category || "other";
+          const categoryLabel = CATEGORY_LABELS[category] || category;
+          const keyword = item.hashtag || item.keyword || "-";
+          const spread = item.spread_signal === "hot" ? "급상승" : item.spread_signal === "rising" ? "상승" : "관심";
+          const spreadClass = item.spread_signal === "hot" ? "hot" : item.spread_signal === "rising" ? "up" : "mid";
+          return `
+            <tr data-platform="${escapeHtmlLocal(platform)}" data-category="${escapeHtmlLocal(category)}" data-keyword="${escapeHtmlLocal(keyword)}">
+              <td>${idx + 1}</td>
+              <td><strong>${escapeHtmlLocal(keyword)}</strong></td>
+              <td><div class="platform-pills"><span class="platform-pill">${escapeHtmlLocal(platform)}</span></div></td>
+              <td>${escapeHtmlLocal(categoryLabel)}</td>
+              <td><strong>${Number(item.trend_score || 0).toFixed(0)}</strong></td>
+              <td><span class="trend-signal ${spreadClass}">${spread}</span></td>
+              <td>${escapeHtmlLocal(item.content_usage || "-")}</td>
+              <td>${Number(item.commerce_score || 0).toFixed(0)}</td>
+              <td>${safetyBadge(item.adsense_safety)}</td>
+              <td><button class="btn-soft" onclick="selectSnsTrend('${escapeJsLocal(keyword)}','${escapeJsLocal(categoryLabel)}','${escapeJsLocal(platform)}','Supabase에서 불러온 SNS 트렌드입니다.','발행 전 근거자료와 정책 리스크를 확인하세요.')">상세</button></td>
+            </tr>
+          `;
+        }).join("");
+
+        if (typeof applySnsFilters === "function") applySnsFilters();
+      }
+
+      function summarizeRun(run) {
+        if (!run) return "실행 정보 없음";
+        if (run.summary && typeof run.summary === "object") {
+          const parts = [];
+          if (run.summary.inserted != null) parts.push(`inserted ${run.summary.inserted}`);
+          if (run.summary.message) parts.push(run.summary.message);
+          if (parts.length) return parts.join(" · ");
+        }
+        return `${run.run_type || "run"} 실행 기록`;
+      }
+
+      function renderDashboardRuns(runs) {
+        const timeline = document.getElementById("dashboardRunsTimeline") || document.querySelector("#page-logs .timeline");
+        if (!timeline) return;
+
+        window.supabaseRuntime.runs = runs || [];
+        timeline.innerHTML = (runs || []).slice(0, 20).map((run, idx) => {
+          const started = run.started_at ? new Date(run.started_at).toLocaleString("ko-KR") : "-";
+          return `
+            <div class="log-row">
+              <strong>${started}</strong>
+              <span>${escapeHtmlLocal(run.run_type || "-")}</span>
+              ${statusBadge(run.status)}
+              <span>${escapeHtmlLocal(run.error_message || summarizeRun(run))}</span>
+              <button class="btn-gray" onclick="openSupabaseRunDetail(${idx})">상세</button>
+            </div>
+          `;
+        }).join("");
+
+        const automationStatus = document.getElementById("kpiAutomationStatus");
+        if (automationStatus) {
+          const latest = runs && runs[0];
+          automationStatus.textContent = latest && latest.status === "failed" ? "확인" : "정상";
+        }
+      }
+
+      window.openSupabaseRunDetail = function (index) {
+        const run = window.supabaseRuntime.runs[index];
+        if (!run) {
+          if (typeof openLogDetail === "function") openLogDetail("full_pipeline");
+          return;
+        }
+
+        const panel = document.getElementById("logDetailPanel");
+        const title = document.getElementById("logDetailTitle");
+        const summary = document.getElementById("logDetailSummary");
+        const raw = document.getElementById("logDetailRaw");
+
+        if (!panel || !title || !summary || !raw) {
+          toast("로그 상세 영역을 찾지 못했습니다.");
+          return;
+        }
+
+        title.textContent = `${run.run_type || "실행"} 상세`;
+        summary.textContent = run.error_message || summarizeRun(run);
+        raw.textContent = JSON.stringify(run, null, 2);
+        panel.classList.add("show");
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+
+      window.loadSupabaseDashboardData = async function () {
+        if (!isSupabaseConfigured()) {
+          updateSupabaseStatus(
+            "warning",
+            "Supabase 설정 필요",
+            "dashboard_config.js에 SUPABASE_ANON_KEY를 입력하면 실제 데이터를 불러옵니다. 현재는 목업 데이터가 표시됩니다.",
+            "목업 데이터"
+          );
+          return;
+        }
+
+        try {
+          updateSupabaseStatus("warning", "Supabase 데이터 불러오는 중", "trend_keywords, sns_trends, dashboard_runs 데이터를 조회하고 있습니다.", "동기화 중");
+
+          const [keywords, snsTrends, runs] = await Promise.all([
+            supabaseSelect("trend_keywords", "select=*&order=created_at.desc&limit=100"),
+            supabaseSelect("sns_trends", "select=*&order=collected_at.desc&limit=100"),
+            supabaseSelect("dashboard_runs", "select=*&order=started_at.desc&limit=50")
+          ]);
+
+          window.supabaseRuntime.enabled = true;
+          window.supabaseRuntime.lastLoadedAt = new Date();
+          window.supabaseRuntime.keywords = keywords || [];
+          window.supabaseRuntime.snsTrends = snsTrends || [];
+          window.supabaseRuntime.runs = runs || [];
+
+          if (keywords && keywords.length) renderKeywordTables(keywords);
+          if (snsTrends && snsTrends.length) renderSnsTrends(snsTrends);
+          if (runs && runs.length) renderDashboardRuns(runs);
+
+          const syncText = window.supabaseRuntime.lastLoadedAt.toLocaleTimeString("ko-KR");
+          updateSupabaseStatus(
+            "connected",
+            "Supabase 실제 데이터 연결됨",
+            `최근 동기화: ${syncText} · 키워드 ${keywords.length}건 · SNS ${snsTrends.length}건 · 실행 로그 ${runs.length}건`,
+            "실제 데이터"
+          );
+        } catch (error) {
+          console.error(error);
+          updateSupabaseStatus(
+            "error",
+            "Supabase 데이터 조회 실패",
+            error.message || "RLS 정책, anon key, URL 설정을 확인하세요.",
+            "연결 오류"
+          );
+        }
+      };
+
+      window.setupSupabaseAutoRefresh = function () {
+        const config = getDashboardConfig();
+        const refreshSeconds = Number(config.REFRESH_SECONDS || 0);
+        if (refreshSeconds > 0 && isSupabaseConfigured()) {
+          setInterval(window.loadSupabaseDashboardData, refreshSeconds * 1000);
+        }
+      };
+    })();
+
     updateUserUI();
     updateSiteInfoUI();
     initPageFromHash();
     updateDateText();
     setInterval(updateDateText, 1000);
-    loadSupabaseDashboardData();
-    setupSupabaseAutoRefresh();
   </script>
   <div id="toast" class="toast"></div>
 </body>
