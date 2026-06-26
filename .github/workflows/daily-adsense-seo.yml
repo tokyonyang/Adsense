@@ -38,8 +38,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SITE_DESCRIPTION: ${{ vars.SITE_DESCRIPTION }}
           GOOGLE_TRENDS_GEO: KR
-          BLOCKED_KEYWORDS: "도박,성인,의약품,치료,대출,주식추천,코인추천,불법,마약"
-        run: python main.py --max-keywords 10 --max-posts 3
+          BLOCKED_KEYWORDS: "도박,불법,마약"
+        run: python main.py --max-keywords 30 --max-posts 10
 
       - name: Upload reports
         if: always()
