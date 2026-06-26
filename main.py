@@ -2,6 +2,7 @@ import os
 import argparse
 import json
 import re
+import html as html_lib
 from pathlib import Path
 from datetime import datetime
 
@@ -120,9 +121,19 @@ def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: 
     return items
 
 
+def _html_attr(text: str) -> str:
+    """HTML 링크 속성에 넣을 값을 안전하게 이스케이프합니다."""
+    return html_lib.escape(str(text or ""), quote=True)
+
+
 def _ideas_to_telegram_text(items: list[dict]) -> str:
+    """텔레그램용 작성 후보 리포트를 생성합니다.
+
+    기사 URL 전체를 노출하지 않고 <a href="...">링크1</a> 형태의
+    클릭 가능한 라벨로만 표시합니다.
+    """
     lines = [
-        "🧭 AdSense 작성 후보 아이템 리포트",
+        "🧭 <b>AdSense 작성 후보 아이템 리포트</b>",
         "글 초안은 생성하지 않았습니다. 선별용 주제와 관련 기사 링크만 정리했습니다.",
     ]
     if not items:
@@ -130,10 +141,10 @@ def _ideas_to_telegram_text(items: list[dict]) -> str:
         return "\n".join(lines)
 
     for i, item in enumerate(items, 1):
-        keyword = item.get("keyword") or ""
-        angle = item.get("angle") or ""
-        source = item.get("source") or ""
-        lines.append(f"\n{i}. {keyword}")
+        keyword = html_escape(item.get("keyword") or "")
+        angle = html_escape(item.get("angle") or "")
+        source = html_escape(item.get("source") or "")
+        lines.append(f"\n<b>{i}. {keyword}</b>")
         if source:
             lines.append(f"수집경로: {source}")
         if angle:
@@ -142,17 +153,21 @@ def _ideas_to_telegram_text(items: list[dict]) -> str:
         if news:
             lines.append("관련 기사:")
             for n, article in enumerate(news, 1):
-                title = article.get("title") or "기사 링크"
-                media = article.get("source") or ""
-                published = article.get("published") or ""
-                url = article.get("url") or ""
+                title = html_escape(article.get("title") or "기사 제목 없음")
+                media = html_escape(article.get("source") or "")
+                published = html_escape(article.get("published") or "")
+                url = str(article.get("url") or "").strip()
                 meta = " · ".join(x for x in [media, published] if x)
-                if meta:
-                    lines.append(f"  {n}) {title} ({meta})")
+                link_label = f"링크{n}"
+                if url.startswith(("http://", "https://")):
+                    link_text = f'<a href="{_html_attr(url)}">{link_label}</a>'
                 else:
-                    lines.append(f"  {n}) {title}")
-                if url:
-                    lines.append(f"     {url}")
+                    link_text = link_label
+
+                if meta:
+                    lines.append(f"  {n}) {title} ({meta}) / {link_text}")
+                else:
+                    lines.append(f"  {n}) {title} / {link_text}")
         else:
             lines.append("관련 기사: 최근 7일 기준 RSS에서 확인된 링크가 없습니다.")
     return "\n".join(lines)
@@ -216,7 +231,7 @@ def main():
                 "news_links": " | ".join(n.get("url", "") for n in news),
             })
         pd.DataFrame(flat_rows).to_csv(f"reports/idea_items_{today}.csv", index=False, encoding="utf-8-sig")
-        send_telegram_long(_ideas_to_telegram_text(items), parse_mode=None)
+        send_telegram_long(_ideas_to_telegram_text(items), parse_mode="HTML")
         return
 
     results = []
