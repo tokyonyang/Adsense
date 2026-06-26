@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AdSense SEO 운영 대시보드 v1.7</title>
+  <title>AdSense SEO 운영 대시보드 v1.8</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -2111,6 +2111,34 @@
       }
     }
 
+  
+    /* =========================================================
+       v1.8 Economic Event Dedupe + Search Boost Backend Ready
+       ========================================================= */
+    .dedupe-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .boost-item.duplicate-merged {
+      border-color: #c7d2fe;
+      background: #eef2ff;
+    }
+
+    .event-source-count {
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
   </style>
 </head>
 <body>
@@ -2411,7 +2439,7 @@
         </section>
 
         <div class="empty-note" style="margin-top:18px;">
-          v1.7 개선 완료: 모바일 하단 빠른 메뉴와 경제지표 이벤트 검색 강화 큐를 추가했습니다.
+          v1.8 개선 완료: 경제지표 중복 병합과 이벤트일 검색량 강화 백엔드 준비 파일을 추가했습니다.
         </div>
 
       </section>
@@ -3176,7 +3204,7 @@
         <section class="card panel" style="margin-bottom:18px;">
           <div class="panel-title">
             <h2>📊 주요 경제지표 일정</h2>
-            <span class="live-data-marker" id="economicEventsDataMarker">Supabase 연결 대기</span>
+            <span class="live-data-marker" id="economicEventsDataMarker">Supabase 연결 대기</span><span class="dedupe-note" id="economicEventsDedupeNote">중복 자동 병합</span>
           </div>
           <div class="table-wrap" id="economicEventsTableWrap">
             <table id="economicEventsTable">
@@ -5243,6 +5271,319 @@ action: 다음 실행에서 재시도하거나 모델/쿼터 상태를 확인하
           }
           window.renderSnsMobileCards();
         }, 800);
+      });
+    })();
+
+
+    // v1.8 경제지표 중복 제거 + 검색 강화 큐 정리
+    (function () {
+      function normalizeEventNameV18(name) {
+        return String(name || "")
+          .toLowerCase()
+          .replace(/\s+/g, "")
+          .replace(/[()\[\]{}·ㆍ,.:;|/\\_-]/g, "")
+          .replace(/소비자물가지수/g, "cpi")
+          .replace(/consumerpriceindex/g, "cpi")
+          .replace(/personalconsumptionexpenditures/g, "pce")
+          .replace(/비농업고용지수/g, "비농업고용")
+          .trim();
+      }
+
+      function eventKeyV18(event) {
+        const date = String(event.event_date || "").slice(0, 10);
+        const country = String(event.country || "").trim().toLowerCase();
+        const currency = String(event.currency || "").trim().toLowerCase();
+        const name = normalizeEventNameV18(event.event_name || "");
+        return [date, country, currency, name].join("|");
+      }
+
+      function importanceRankV18(value) {
+        const map = { critical: 4, high: 3, medium: 2, low: 1 };
+        return map[String(value || "").toLowerCase()] || 0;
+      }
+
+      function statusRankV18(value) {
+        const map = { released: 4, followup_needed: 3, scheduled: 2, done: 1 };
+        return map[String(value || "").toLowerCase()] || 0;
+      }
+
+      function timeValueV18(value) {
+        if (!value) return "";
+        return String(value).slice(0, 8);
+      }
+
+      function timestampV18(value) {
+        if (!value) return 0;
+        const t = Date.parse(value);
+        return Number.isFinite(t) ? t : 0;
+      }
+
+      function chooseBetterEventV18(a, b) {
+        const score = event => {
+          let s = 0;
+          s += importanceRankV18(event.importance) * 1000;
+          s += event.actual_value ? 500 : 0;
+          s += event.forecast_value ? 120 : 0;
+          s += event.previous_value ? 80 : 0;
+          s += statusRankV18(event.status) * 50;
+          s += timestampV18(event.updated_at || event.created_at) / 100000000000;
+          return s;
+        };
+
+        const winner = score(b) > score(a) ? b : a;
+        const loser = winner === b ? a : b;
+
+        return {
+          ...loser,
+          ...winner,
+          previous_value: winner.previous_value || loser.previous_value,
+          forecast_value: winner.forecast_value || loser.forecast_value,
+          actual_value: winner.actual_value || loser.actual_value,
+          note: winner.note || loser.note,
+          source_url: winner.source_url || loser.source_url,
+          _merged_count: Number(a._merged_count || 1) + Number(b._merged_count || 1)
+        };
+      }
+
+      window.dedupeEconomicEventsV18 = function (events) {
+        const map = new Map();
+
+        (events || []).forEach(event => {
+          const key = eventKeyV18(event);
+          if (!key.replace(/\|/g, "")) return;
+
+          if (!map.has(key)) {
+            map.set(key, { ...event, _merged_count: Number(event._merged_count || 1) });
+          } else {
+            map.set(key, chooseBetterEventV18(map.get(key), event));
+          }
+        });
+
+        return [...map.values()].sort((a, b) => {
+          const aDate = `${a.event_date || ""} ${timeValueV18(a.event_time)}`;
+          const bDate = `${b.event_date || ""} ${timeValueV18(b.event_time)}`;
+          return aDate.localeCompare(bDate);
+        });
+      };
+
+      function escapeHtmlV18(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function formatDateV18(dateValue) {
+        if (!dateValue) return "-";
+        try {
+          return new Date(dateValue).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", weekday: "short" });
+        } catch {
+          return String(dateValue);
+        }
+      }
+
+      function formatTimeV18(timeValue) {
+        if (!timeValue) return "-";
+        return String(timeValue).slice(0, 5);
+      }
+
+      function badgeV18(value, type = "status") {
+        const v = String(value || "");
+        if (type === "importance") {
+          if (v === "critical") return '<span class="badge red">매우 중요</span>';
+          if (v === "high") return '<span class="badge amber">중요</span>';
+          if (v === "medium") return '<span class="badge blue">보통</span>';
+          return '<span class="badge gray">낮음</span>';
+        }
+
+        if (v === "scheduled" || v === "candidate") return '<span class="badge gray">예정</span>';
+        if (v === "released" || v === "draft_created") return '<span class="badge blue">진행</span>';
+        if (v === "followup_needed" || v === "review_needed") return '<span class="badge amber">검토</span>';
+        if (v === "done" || v === "published") return '<span class="badge green">완료</span>';
+        if (v === "failed") return '<span class="badge red">실패</span>';
+        return `<span class="badge gray">${escapeHtmlV18(v || "-")}</span>`;
+      }
+
+      function renderEconomicEventsDedupedV18(events) {
+        const table = document.getElementById("economicEventsTable");
+        const marker = document.getElementById("economicEventsDataMarker");
+        const dedupeNote = document.getElementById("economicEventsDedupeNote");
+        if (!table || !table.querySelector("tbody")) return;
+
+        const rawCount = (events || []).length;
+        const deduped = window.dedupeEconomicEventsV18(events || []);
+        window.supabaseRuntime = window.supabaseRuntime || {};
+        window.supabaseRuntime.economicEvents = deduped;
+        window.supabaseRuntime.economicEventsRawCount = rawCount;
+
+        if (!deduped.length) {
+          table.querySelector("tbody").innerHTML = `<tr><td colspan="10"><div class="empty-live-data">등록된 경제지표 일정이 없습니다. Supabase economic_events에 데이터를 추가하면 이곳에 표시됩니다.</div></td></tr>`;
+          if (marker) {
+            marker.textContent = "데이터 없음";
+            marker.className = "pending-chip";
+          }
+          if (dedupeNote) dedupeNote.textContent = "중복 없음";
+          return;
+        }
+
+        table.querySelector("tbody").innerHTML = deduped.slice(0, 30).map(event => {
+          const merged = Number(event._merged_count || 1);
+          return `
+            <tr>
+              <td>${escapeHtmlV18(formatDateV18(event.event_date))}</td>
+              <td>${escapeHtmlV18(formatTimeV18(event.event_time))}</td>
+              <td>${escapeHtmlV18(event.country || "-")}</td>
+              <td><strong>${escapeHtmlV18(event.event_name || "-")}</strong>${merged > 1 ? ` <span class="event-source-count">중복 ${merged}건 병합</span>` : ""}</td>
+              <td>${badgeV18(event.importance, "importance")}</td>
+              <td>${escapeHtmlV18(event.previous_value || "-")}</td>
+              <td>${escapeHtmlV18(event.forecast_value || "-")}</td>
+              <td>${escapeHtmlV18(event.actual_value || "발표 전")}</td>
+              <td>${escapeHtmlV18(event.content_usage || "watch")}</td>
+              <td>${badgeV18(event.status)}</td>
+            </tr>
+          `;
+        }).join("");
+
+        if (marker) {
+          marker.textContent = `실제 데이터 ${deduped.length}건`;
+          marker.className = "live-data-marker";
+        }
+        if (dedupeNote) {
+          const removed = rawCount - deduped.length;
+          dedupeNote.textContent = removed > 0 ? `중복 ${removed}건 병합` : "중복 없음";
+        }
+      }
+
+      function eventPriorityLabelV18(importance) {
+        if (importance === "critical") return ["critical", "최우선 검색"];
+        if (importance === "high") return ["high", "검색 강화"];
+        return ["medium", "일반 모니터링"];
+      }
+
+      function eventKeywordsV18(event) {
+        const name = event.event_name || "";
+        const country = event.country || "";
+        const type = event.event_type || "";
+        const base = [name, country].filter(Boolean);
+
+        const map = {
+          inflation: ["물가", "CPI", "PCE", "PPI", "금리", "환율", "국채금리", "연준"],
+          employment: ["고용", "실업률", "비농업고용", "임금", "금리인하", "달러"],
+          rate: ["기준금리", "FOMC", "금통위", "연준", "달러", "채권금리", "환율"],
+          growth: ["GDP", "경기침체", "성장률", "기업실적", "증시"],
+          housing: ["주택", "부동산", "전세", "월세", "금리", "대출"],
+          manufacturing: ["PMI", "제조업", "서비스업", "경기선행", "반도체"],
+          sentiment: ["소비자심리", "소비자신뢰", "소비", "경기전망", "소매판매"],
+          macro: ["금리", "환율", "증시", "채권", "경기"]
+        };
+
+        return [...new Set([...base, ...(map[type] || map.macro)])].slice(0, 10);
+      }
+
+      window.renderEventSearchBoost = function (events) {
+        const list = document.getElementById("eventSearchBoostList");
+        const marker = document.getElementById("eventBoostMarker");
+        if (!list) return;
+
+        const dedupedEvents = window.dedupeEconomicEventsV18(events || []);
+        const important = dedupedEvents
+          .filter(e => ["critical", "high"].includes(e.importance) || ["article", "cardnews", "telegram", "followup"].includes(e.content_usage))
+          .sort((a, b) => {
+            const scoreA = a.importance === "critical" ? 3 : a.importance === "high" ? 2 : 1;
+            const scoreB = b.importance === "critical" ? 3 : b.importance === "high" ? 2 : 1;
+            return scoreB - scoreA;
+          })
+          .slice(0, 8);
+
+        if (!important.length) {
+          list.innerHTML = `
+            <div class="boost-item">
+              <div>
+                <strong>검색 강화가 필요한 주요 경제지표가 없습니다.</strong>
+                <small>critical/high 이벤트가 등록되면 자동으로 검색 강화 큐가 생성됩니다.</small>
+              </div>
+              <span class="boost-priority medium">대기</span>
+            </div>
+          `;
+          if (marker) marker.textContent = "강화 대상 없음";
+          return;
+        }
+
+        list.innerHTML = important.map(event => {
+          const [cls, label] = eventPriorityLabelV18(event.importance);
+          const keywords = eventKeywordsV18(event).join(" · ");
+          const merged = Number(event._merged_count || 1);
+          return `
+            <div class="boost-item ${merged > 1 ? "duplicate-merged" : ""}">
+              <div>
+                <strong>${escapeHtmlV18(event.country || "")} ${escapeHtmlV18(event.event_name || "경제지표")} 검색 강화</strong>
+                <small>${escapeHtmlV18(formatDateV18(event.event_date))} ${escapeHtmlV18(formatTimeV18(event.event_time))} · 검색어: ${escapeHtmlV18(keywords)}${merged > 1 ? ` · 중복 ${merged}건 병합` : ""}</small>
+              </div>
+              <span class="boost-priority ${cls}">${label}</span>
+            </div>
+          `;
+        }).join("");
+
+        if (marker) marker.textContent = `강화 대상 ${important.length}건`;
+      };
+
+      window.renderEconomicMobileCards = function (events) {
+        const el = document.getElementById("economicEventsMobileCards");
+        if (!el) return;
+
+        const deduped = window.dedupeEconomicEventsV18(events || []);
+        if (!deduped.length) {
+          el.innerHTML = `<div class="empty-live-data">등록된 경제지표 일정이 없습니다.</div>`;
+          return;
+        }
+
+        el.innerHTML = deduped.slice(0, 20).map(event => {
+          const [cls, label] = eventPriorityLabelV18(event.importance);
+          const usage = event.content_usage || "watch";
+          const merged = Number(event._merged_count || 1);
+          return `
+            <article class="mobile-data-card">
+              <h3>${escapeHtmlV18(event.event_name || "경제지표")}</h3>
+              <p>${escapeHtmlV18(event.country || "-")} · ${escapeHtmlV18(formatDateV18(event.event_date))} ${escapeHtmlV18(formatTimeV18(event.event_time))}</p>
+              <div class="meta">
+                <span class="${cls === "critical" ? "hot" : cls === "high" ? "warn" : ""}">${label}</span>
+                <span>이전 ${escapeHtmlV18(event.previous_value || "-")}</span>
+                <span>예상 ${escapeHtmlV18(event.forecast_value || "-")}</span>
+                <span>${escapeHtmlV18(usage)}</span>
+                ${merged > 1 ? `<span>중복 ${merged}건 병합</span>` : ""}
+              </div>
+            </article>
+          `;
+        }).join("");
+      };
+
+      const previousExtendedLoadV18 = window.loadSupabaseExtendedData;
+      if (typeof previousExtendedLoadV18 === "function") {
+        window.loadSupabaseExtendedData = async function () {
+          await previousExtendedLoadV18();
+
+          const rawEvents = window.supabaseRuntime?.economicEvents || [];
+          const deduped = window.dedupeEconomicEventsV18(rawEvents);
+
+          renderEconomicEventsDedupedV18(rawEvents);
+          window.renderEventSearchBoost(deduped);
+          window.renderEconomicMobileCards(deduped);
+
+          window.supabaseRuntime.economicEvents = deduped;
+        };
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        setTimeout(() => {
+          const events = window.supabaseRuntime?.economicEvents || [];
+          if (events.length) {
+            renderEconomicEventsDedupedV18(events);
+            window.renderEventSearchBoost(events);
+            window.renderEconomicMobileCards(events);
+          }
+        }, 1200);
       });
     })();
 
