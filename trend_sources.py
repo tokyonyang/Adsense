@@ -9,6 +9,52 @@ from seo_utils import clean_text, score_keyword, is_valid_korean_keyword
 GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo={geo}"
 
 
+def _parse_approx_traffic(value: str) -> int:
+    """Google Trends RSS의 20K+, 1M+, 2만+ 같은 조회수 표현을 숫자로 변환합니다."""
+    text = clean_text(value)
+    if not text:
+        return 0
+
+    # 예: 20K+, 100K+ searches, 1.5M+
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([KkMmBb])\+?", text)
+    if m:
+        number = float(m.group(1))
+        unit = m.group(2).lower()
+        multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(unit, 1)
+        return int(number * multiplier)
+
+    # 예: 2만+, 3천+
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(억|만|천)\+?", text)
+    if m:
+        number = float(m.group(1))
+        multiplier = {"천": 1_000, "만": 10_000, "억": 100_000_000}.get(m.group(2), 1)
+        return int(number * multiplier)
+
+    m = re.search(r"(\d[\d,]*)", text)
+    if m:
+        return int(m.group(1).replace(",", ""))
+    return 0
+
+
+def _get_entry_approx_traffic(entry) -> int:
+    candidates = [
+        getattr(entry, "ht_approx_traffic", ""),
+        getattr(entry, "approx_traffic", ""),
+    ]
+    try:
+        candidates.append(entry.get("ht_approx_traffic", ""))
+        candidates.append(entry.get("approx_traffic", ""))
+    except Exception:
+        pass
+    candidates.append(getattr(entry, "summary", ""))
+
+    for candidate in candidates:
+        parsed = _parse_approx_traffic(candidate)
+        if parsed:
+            return parsed
+    return 0
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -23,10 +69,7 @@ def fetch_google_trends_rss(geo: str = "KR", limit: int = 30) -> pd.DataFrame:
         for e in feed.entries[:limit]:
             title = clean_text(html.unescape(getattr(e, "title", "")))
             summary = clean_text(html.unescape(getattr(e, "summary", "")))
-            approx = 0
-            m = re.search(r"(\d[\d,]*)", summary)
-            if m:
-                approx = int(m.group(1).replace(",", ""))
+            approx = _get_entry_approx_traffic(e)
             if title:
                 rows.append({
                     "keyword": title,

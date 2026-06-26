@@ -32,7 +32,7 @@ def _published(entry) -> str:
         return raw[:16]
 
 
-def fetch_related_news(keyword: str, limit: int = 5, geo: str = "KR") -> list[dict]:
+def fetch_related_news(keyword: str, limit: int = 5, geo: str = "KR", category_hint: str = "") -> list[dict]:
     """키워드와 관련된 한국어 뉴스 링크를 Google News RSS에서 가져옵니다.
 
     무료/무키 API 방식이라 네이버 뉴스 API 키 없이도 GitHub Actions에서 동작합니다.
@@ -42,8 +42,11 @@ def fetch_related_news(keyword: str, limit: int = 5, geo: str = "KR") -> list[di
     if not keyword:
         return []
 
-    # 너무 넓은 검색을 줄이기 위해 한국어 뉴스 쪽으로 힌트를 줍니다.
-    query = quote_plus(f'{keyword} when:7d')
+    # 너무 넓은 검색을 줄이기 위해 카테고리 힌트를 함께 넣습니다.
+    # 예: "기준금리 경제 금융 물가 금리 환율 when:7d"
+    hint = clean_text(category_hint)
+    search_text = f"{keyword} {hint} when:7d" if hint else f"{keyword} when:7d"
+    query = quote_plus(search_text)
     url = GOOGLE_NEWS_SEARCH_RSS.format(query=query)
 
     try:

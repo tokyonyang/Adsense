@@ -1,19 +1,25 @@
 # AdSense SEO 자동화 스타터
 
-트렌드 키워드를 수집하고, 텔레그램으로 **작성 후보 아이템과 관련 신문 기사 링크**를 보내는 자동화 패키지입니다. 필요할 때만 Gemini 글 초안 생성과 WordPress draft 업로드를 사용할 수 있습니다.
+트렌드 키워드를 수집하고, 텔레그램으로 **오늘의 핫이슈 / 오늘의 카드뉴스 / 오늘의 작성글 후보**를 보내는 자동화 패키지입니다. 기본값은 경제·금융 관련 아이템만 우선 활용하며, 긴 글 초안은 미리 생성하지 않습니다.
 
-## 이번 수정 사항 v6
-- 기사 URL 전체를 텔레그램에 노출하지 않고, 클릭 가능한 `링크1` ~ `링크5` 라벨로 표시합니다.
-- 텔레그램 리포트는 HTML 모드로 전송되어 `링크1`을 누르면 해당 신문 기사로 이동합니다.
-- 기본 동작은 계속 **작성 후보 리스트 전송**입니다. Gemini로 긴 본문을 미리 생성하지 않습니다.
-- 텔레그램에는 주제별 `작성각도`, 기사 제목, 매체/날짜, `링크1~5`만 표시합니다.
-- Google News RSS 기반으로 최근 관련 뉴스 링크를 수집합니다.
+## 이번 수정 사항 v8
+
+- 전체 후보를 **조회수 많은 순**으로 정렬합니다.
+- 텔레그램 리포트 구조를 아래 3개 섹션으로 바꿨습니다.
+  - `🔥 오늘의 핫이슈`: 조회수 높은 순으로 TOP 10 정리
+  - `🃏 오늘의 카드뉴스`: 카드뉴스로 만들기 좋은 항목 TOP 3 추천
+  - `✍️ 오늘의 작성글`: 블로그/워드프레스 글로 작성하기 좋은 항목 TOP 3 추천
+- 대상 항목마다 뒷받침할 수 있는 **관련 신문 기사 링크**를 함께 붙입니다.
+- 기사 URL 원문은 노출하지 않고 `링크1` ~ `링크5` 클릭 라벨로 표시합니다.
+- Google Trends RSS의 `20K+`, `1M+`, `2만+` 같은 조회수 표현을 숫자로 변환해 정렬합니다.
+- 수동/seed 키워드처럼 조회수 정보가 없는 항목은 하단으로 밀립니다.
 
 ## 기본 실행
+
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
-python main.py --max-keywords 30 --max-posts 10
+python main.py --max-keywords 30 --max-posts 10 --category-filter finance
 ```
 
 기본값은 아래와 같습니다.
@@ -23,86 +29,90 @@ MAX_KEYWORDS=30
 MAX_POSTS_PER_RUN=10
 ITEM_LIST_ONLY=true
 NEWS_LINKS_PER_TOPIC=5
+HOT_ISSUE_COUNT=10
+CARD_NEWS_COUNT=3
+ARTICLE_COUNT=3
+CATEGORY_FILTER=finance
 ```
 
-즉, 최대 30개 키워드를 수집하고 그중 10개 작성 후보를 골라, 각 주제별 관련 기사 5개를 텔레그램으로 보냅니다. URL 원문은 표시하지 않고 `링크1` ~ `링크5` 라벨만 표시됩니다.
-
+즉, 최대 30개 키워드를 수집하고 그중 경제·금융 관련 후보를 조회수 순으로 정리한 뒤, 텔레그램에 오늘의 운영 후보만 보냅니다.
 
 ## 텔레그램 표시 예시
-```text
-🧭 AdSense 작성 후보 아이템 리포트
 
-1. 전기요금 절약 방법
+```text
+🔥 오늘의 핫이슈 · 카드뉴스 · 작성글 후보
+분야 필터: 경제·금융 우선
+정렬 기준: 조회수 많은 순 → 근거 기사 수 → 내부 점수
+
+🔥 오늘의 핫이슈 TOP 10
+
+1. [경제·금융] 기준금리 전망
+조회수: 10.0만+ / 근거강도: 강함
 수집경로: google_trends_rss
-작성각도: 가정에서 바로 적용 가능한 절약 방법과 요금제 확인 포인트
-관련 기사:
-  1) 기사 제목 (매체 · 2026-06-26) / 링크1
-  2) 기사 제목 (매체 · 2026-06-26) / 링크2
-  3) 기사 제목 (매체 · 2026-06-26) / 링크3
-  4) 기사 제목 (매체 · 2026-06-26) / 링크4
-  5) 기사 제목 (매체 · 2026-06-26) / 링크5
+작성각도: 금리 변화 → 가계부담/저축전략 → 확인할 금융상품 포인트
+근거자료:
+  1) 기사 제목 (매체 · 날짜) / 링크1
+  2) 기사 제목 (매체 · 날짜) / 링크2
+  3) 기사 제목 (매체 · 날짜) / 링크3
+  4) 기사 제목 (매체 · 날짜) / 링크4
+  5) 기사 제목 (매체 · 날짜) / 링크5
+
+🃏 오늘의 카드뉴스 추천
+1. #1 기준금리 전망
+선정이유: 조회수 10.0만+, 기사근거 5개
+구성방향: 원인 → 가계 영향 → 오늘 확인할 숫자 → 대응법 카드 구성
+
+✍️ 오늘의 작성글 추천
+1. #1 기준금리 전망
+선정이유: 검색 유입 가능성 + 조회수 10.0만+ + 근거 기사 5개
+글방향: 기준금리 전망 배경과 가계/금융상품 영향, 확인해야 할 지표를 정리하는 해설형 글
 ```
 
-텔레그램에서는 `링크1` ~ `링크5`가 클릭 가능한 링크로 표시됩니다.
+## GitHub Actions 수동 실행 옵션
 
-## GitHub Actions 사용
-`Actions → daily-adsense-seo → Run workflow`에서 다음 옵션을 볼 수 있어야 합니다.
+`Actions → daily-adsense-seo → Run workflow`에서 아래 값을 조정할 수 있습니다.
 
-```text
-topics
-item_list_only
-news_links_per_topic
-telegram_only
-send_articles_to_telegram
-```
+| 옵션 | 기본값 | 설명 |
+|---|---:|---|
+| `topics` | 비움 | 특정 주제만 보고 싶을 때 쉼표/줄바꿈으로 입력 |
+| `category_filter` | `finance` | 경제·금융 우선. `all`이면 전체 카테고리 |
+| `item_list_only` | `true` | 글 초안 생성 없이 후보 리포트만 전송 |
+| `news_links_per_topic` | `5` | 주제별 근거 기사 링크 수 |
+| `hot_issue_count` | `10` | 오늘의 핫이슈 표시 개수 |
+| `card_news_count` | `3` | 오늘의 카드뉴스 추천 개수 |
+| `article_count` | `3` | 오늘의 작성글 추천 개수 |
+| `telegram_only` | `false` | 글 초안 생성 모드에서 WordPress 업로드 생략 |
+| `send_articles_to_telegram` | `false` | 글 초안 생성 모드에서 본문을 텔레그램으로 전송 |
 
-### 추천 운영값
-```text
-item_list_only = true
-news_links_per_topic = 5
-```
+## 카테고리 필터
 
-이렇게 실행하면 WordPress 업로드와 글 초안 생성 없이 선별용 리포트만 옵니다.
+기본값 `finance`에는 아래 4개 그룹이 포함됩니다.
 
-### 선택 주제만 받고 싶을 때
-`topics`에 쉼표나 줄바꿈으로 입력하세요.
+- `💰 경제·금융`: 금리, 환율, 물가, 대출, 예금, 카드, 보험, 세금
+- `📈 증권·투자`: 코스피, 코스닥, 주식, ETF, 공모주, 실적, 반도체
+- `🏠 부동산·주거금융`: 청약, 전세, 월세, 주택담보대출, DSR
+- `🏛️ 정책·지원금`: 소상공인 지원금, 근로장려금, 국민연금, 최저임금
 
-```text
-전기요금 절약 방법, 소상공인 지원금 정리, 전시 작전통제권
-```
+전체 카테고리를 보고 싶으면 수동 실행에서 `category_filter=all`로 바꾸면 됩니다.
 
-## 글 초안 생성 모드로 전환
-선택한 주제를 실제 글 초안으로 만들고 싶을 때만 아래처럼 실행하세요.
+## WordPress 글 초안 생성이 필요할 때
+
+평소에는 `ITEM_LIST_ONLY=true`를 권장합니다. 특정 주제를 보고 글 작성까지 하고 싶을 때만 아래처럼 실행하세요.
 
 ```text
 item_list_only = false
 telegram_only = true
 send_articles_to_telegram = true
+topics = 기준금리 전망, 원달러 환율 전망
 ```
 
-WordPress draft 업로드까지 하려면 `telegram_only=false`로 두고, 워드프레스 권한을 먼저 정상화해야 합니다.
+이 경우 WordPress 업로드 없이 텔레그램으로 글 초안을 받을 수 있습니다.
 
-## WordPress 401 오류
-아래 오류는 텔레그램 문제가 아니라 WordPress 권한 문제입니다.
+## 보고서 파일
 
-```text
-HTTP 401 rest_cannot_create
-```
+실행이 끝나면 GitHub Actions artifact로 아래 파일이 저장됩니다.
 
-확인할 것:
-- `WP_USERNAME` 사용자가 관리자/편집자/글쓴이 권한인지 확인
-- 해당 사용자 프로필에서 Application Password를 새로 발급
-- 보안 플러그인이 REST API 또는 Application Password를 막는지 확인
-
-## GitHub Secrets
-```text
-GEMINI_API_KEY
-WP_SITE_URL
-WP_API_URL  # 선택 사항
-WP_USERNAME
-WP_APP_PASSWORD
-TELEGRAM_BOT_TOKEN
-TELEGRAM_CHAT_ID
-```
-
-`ITEM_LIST_ONLY=true`만 쓸 경우 WordPress 관련 Secrets가 없어도 후보 리포트 전송은 가능합니다.
+- `trend_keywords_raw_YYYYMMDD.csv`: 원본 수집 키워드
+- `trend_keywords_YYYYMMDD.csv`: 카테고리 필터 후 조회수 정렬 키워드
+- `idea_items_YYYYMMDD.json`: 후보 아이템과 근거 기사 전체 데이터
+- `idea_items_YYYYMMDD.csv`: 순위, 조회수, 추천 용도, 근거 기사 링크 요약
