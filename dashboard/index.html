@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AdSense SEO 운영 대시보드 v1.6</title>
+  <title>AdSense SEO 운영 대시보드 v1.7</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -1882,6 +1882,235 @@
       }
     }
 
+  
+    /* =========================================================
+       v1.7 Mobile Quick Nav + Event Search Boost
+       ========================================================= */
+
+    .mobile-bottom-nav {
+      display: none;
+    }
+
+    .mobile-card-list {
+      display: none;
+    }
+
+    .event-search-boost {
+      border: 1px solid #bfdbfe;
+      background: linear-gradient(135deg, #eff6ff, #f8fafc);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .event-search-boost .boost-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .event-search-boost h2 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.04em;
+    }
+
+    .event-search-boost p {
+      margin: 6px 0 0;
+      color: #475569;
+      line-height: 1.65;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .boost-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .boost-item {
+      border: 1px solid #dbeafe;
+      background: #fff;
+      border-radius: 14px;
+      padding: 13px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .boost-item strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 5px;
+      word-break: keep-all;
+    }
+
+    .boost-item small {
+      display: block;
+      color: #64748b;
+      line-height: 1.55;
+      font-weight: 800;
+    }
+
+    .boost-priority {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    .boost-priority.critical {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .boost-priority.high {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .boost-priority.medium {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .mobile-data-card {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .mobile-data-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      letter-spacing: -0.03em;
+      word-break: keep-all;
+    }
+
+    .mobile-data-card p {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.55;
+      font-weight: 750;
+    }
+
+    .mobile-data-card .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .mobile-data-card .meta span {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 5px 8px;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .mobile-data-card .meta span.hot {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .mobile-data-card .meta span.safe {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .mobile-data-card .meta span.warn {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding-bottom: 74px;
+      }
+
+      .mobile-bottom-nav {
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        z-index: 1000;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+        padding: 8px;
+        background: rgba(255,255,255,0.94);
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+        backdrop-filter: blur(12px);
+      }
+
+      .mobile-bottom-nav button {
+        border: 0;
+        background: transparent;
+        border-radius: 14px;
+        padding: 8px 4px;
+        color: #334155;
+        font-size: 11px;
+        font-weight: 900;
+        display: grid;
+        gap: 3px;
+        place-items: center;
+      }
+
+      .mobile-bottom-nav button span {
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      .mobile-bottom-nav button.active {
+        background: #eaf2ff;
+        color: var(--blue);
+      }
+
+      .event-search-boost .boost-head {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .boost-item {
+        grid-template-columns: 1fr;
+      }
+
+      .boost-priority {
+        width: fit-content;
+      }
+
+      .desktop-table-on-mobile {
+        display: none;
+      }
+
+      .mobile-card-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      #economicEventsTableWrap,
+      #snsTrendTableWrap {
+        display: none;
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -2075,6 +2304,7 @@
               </tbody>
             </table>
           </div>
+          <div class="mobile-card-list" id="economicEventsMobileCards"></div>
         </section>
 
         <section class="card filter-bar">
@@ -2181,7 +2411,7 @@
         </section>
 
         <div class="empty-note" style="margin-top:18px;">
-          v1.6 개선 완료: PC·태블릿·모바일 반응형 레이아웃을 최적화했습니다.
+          v1.7 개선 완료: 모바일 하단 빠른 메뉴와 경제지표 이벤트 검색 강화 큐를 추가했습니다.
         </div>
 
       </section>
@@ -2323,6 +2553,7 @@
                 </tbody>
               </table>
             </div>
+            <div class="mobile-card-list" id="snsTrendMobileCards"></div>
           </div>
 
           <aside class="side-stack">
@@ -2708,7 +2939,7 @@
               <h2>통합 일일 트렌드 순위</h2>
               <span class="badge blue">콘텐츠/커머스 통합 점수</span>
             </div>
-            <div class="table-wrap">
+            <div class="table-wrap" id="snsTrendTableWrap">
               <table id="snsTrendTable">
                 <thead>
                   <tr>
@@ -2922,12 +3153,32 @@
         </section>
 
 
+        
+        <section class="event-search-boost" id="eventSearchBoostPanel">
+          <div class="boost-head">
+            <div>
+              <h2>🔎 경제지표 이벤트 검색 강화 큐</h2>
+              <p>중요 경제지표가 있는 날에는 해당 지표명, 국가, 금리·환율·증시 영향 키워드를 우선 검색하도록 표시합니다.</p>
+            </div>
+            <span class="data-source-pill" id="eventBoostMarker">경제지표 연동 대기</span>
+          </div>
+          <div class="boost-list" id="eventSearchBoostList">
+            <div class="boost-item">
+              <div>
+                <strong>경제지표 데이터를 불러오면 검색 강화 큐가 자동 생성됩니다.</strong>
+                <small>예: 미국 CPI 발표일 → CPI, 물가, 금리, 달러, 환율, 나스닥, 국채금리 검색 강화</small>
+              </div>
+              <span class="boost-priority medium">대기</span>
+            </div>
+          </div>
+        </section>
+
         <section class="card panel" style="margin-bottom:18px;">
           <div class="panel-title">
             <h2>📊 주요 경제지표 일정</h2>
             <span class="live-data-marker" id="economicEventsDataMarker">Supabase 연결 대기</span>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap" id="economicEventsTableWrap">
             <table id="economicEventsTable">
               <thead>
                 <tr>
@@ -4796,6 +5047,205 @@ action: 다음 실행에서 재시도하거나 모델/쿼터 상태를 확인하
       }, 250);
     });
 
+
+    // v1.7 모바일 카드 뷰 + 경제지표 이벤트 검색 강화 큐
+    (function () {
+      function escapeHtmlV17(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function eventPriorityLabel(importance) {
+        if (importance === "critical") return ["critical", "최우선 검색"];
+        if (importance === "high") return ["high", "검색 강화"];
+        return ["medium", "일반 모니터링"];
+      }
+
+      function eventKeywords(event) {
+        const name = event.event_name || "";
+        const country = event.country || "";
+        const type = event.event_type || "";
+        const base = [name, country].filter(Boolean);
+
+        const map = {
+          inflation: ["물가", "CPI", "PCE", "PPI", "금리", "환율", "국채금리", "연준"],
+          employment: ["고용", "실업률", "비농업고용", "임금", "금리인하", "달러"],
+          rate: ["기준금리", "FOMC", "금통위", "연준", "달러", "채권금리", "환율"],
+          growth: ["GDP", "경기침체", "성장률", "기업실적", "증시"],
+          housing: ["주택", "부동산", "전세", "월세", "금리", "대출"],
+          manufacturing: ["PMI", "제조업", "서비스업", "경기선행", "반도체"],
+          sentiment: ["소비자심리", "소비자신뢰", "소비", "경기전망", "소매판매"],
+          macro: ["금리", "환율", "증시", "채권", "경기"]
+        };
+
+        return [...new Set([...base, ...(map[type] || map.macro)])].slice(0, 10);
+      }
+
+      function formatDateV17(dateValue) {
+        if (!dateValue) return "-";
+        try {
+          return new Date(dateValue).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", weekday: "short" });
+        } catch {
+          return String(dateValue);
+        }
+      }
+
+      function formatTimeV17(timeValue) {
+        if (!timeValue) return "-";
+        return String(timeValue).slice(0, 5);
+      }
+
+      window.renderEventSearchBoost = function (events) {
+        const list = document.getElementById("eventSearchBoostList");
+        const marker = document.getElementById("eventBoostMarker");
+        if (!list) return;
+
+        const important = (events || [])
+          .filter(e => ["critical", "high"].includes(e.importance) || ["article", "cardnews", "telegram", "followup"].includes(e.content_usage))
+          .sort((a, b) => {
+            const scoreA = a.importance === "critical" ? 3 : a.importance === "high" ? 2 : 1;
+            const scoreB = b.importance === "critical" ? 3 : b.importance === "high" ? 2 : 1;
+            return scoreB - scoreA;
+          })
+          .slice(0, 8);
+
+        if (!important.length) {
+          list.innerHTML = `
+            <div class="boost-item">
+              <div>
+                <strong>검색 강화가 필요한 주요 경제지표가 없습니다.</strong>
+                <small>critical/high 이벤트가 등록되면 자동으로 검색 강화 큐가 생성됩니다.</small>
+              </div>
+              <span class="boost-priority medium">대기</span>
+            </div>
+          `;
+          if (marker) marker.textContent = "강화 대상 없음";
+          return;
+        }
+
+        list.innerHTML = important.map(event => {
+          const [cls, label] = eventPriorityLabel(event.importance);
+          const keywords = eventKeywords(event).join(" · ");
+          return `
+            <div class="boost-item">
+              <div>
+                <strong>${escapeHtmlV17(event.country || "")} ${escapeHtmlV17(event.event_name || "경제지표")} 검색 강화</strong>
+                <small>${escapeHtmlV17(formatDateV17(event.event_date))} ${escapeHtmlV17(formatTimeV17(event.event_time))} · 검색어: ${escapeHtmlV17(keywords)}</small>
+              </div>
+              <span class="boost-priority ${cls}">${label}</span>
+            </div>
+          `;
+        }).join("");
+
+        if (marker) marker.textContent = `강화 대상 ${important.length}건`;
+      };
+
+      window.renderEconomicMobileCards = function (events) {
+        const el = document.getElementById("economicEventsMobileCards");
+        if (!el) return;
+
+        if (!events || !events.length) {
+          el.innerHTML = `<div class="empty-live-data">등록된 경제지표 일정이 없습니다.</div>`;
+          return;
+        }
+
+        el.innerHTML = events.slice(0, 20).map(event => {
+          const [cls, label] = eventPriorityLabel(event.importance);
+          const usage = event.content_usage || "watch";
+          return `
+            <article class="mobile-data-card">
+              <h3>${escapeHtmlV17(event.event_name || "경제지표")}</h3>
+              <p>${escapeHtmlV17(event.country || "-")} · ${escapeHtmlV17(formatDateV17(event.event_date))} ${escapeHtmlV17(formatTimeV17(event.event_time))}</p>
+              <div class="meta">
+                <span class="${cls === "critical" ? "hot" : cls === "high" ? "warn" : ""}">${label}</span>
+                <span>이전 ${escapeHtmlV17(event.previous_value || "-")}</span>
+                <span>예상 ${escapeHtmlV17(event.forecast_value || "-")}</span>
+                <span>${escapeHtmlV17(usage)}</span>
+              </div>
+            </article>
+          `;
+        }).join("");
+      };
+
+      window.renderSnsMobileCards = function () {
+        const list = document.getElementById("snsTrendMobileCards");
+        const table = document.getElementById("snsTrendTable");
+        if (!list || !table) return;
+
+        const rows = [...table.querySelectorAll("tbody tr")].filter(row => row.style.display !== "none" && !row.dataset.emptyRow);
+        if (!rows.length) {
+          list.innerHTML = `<div class="empty-live-data">표시할 SNS 트렌드가 없습니다.</div>`;
+          return;
+        }
+
+        list.innerHTML = rows.slice(0, 20).map(row => {
+          const cells = row.querySelectorAll("td");
+          const rank = cells[0]?.innerText || "-";
+          const keyword = cells[1]?.innerText || "-";
+          const platform = cells[2]?.innerText || "-";
+          const category = cells[3]?.innerText || "-";
+          const score = cells[4]?.innerText || "-";
+          const spread = cells[5]?.innerText || "-";
+
+          return `
+            <article class="mobile-data-card">
+              <h3>${escapeHtmlV17(rank)}. ${escapeHtmlV17(keyword)}</h3>
+              <p>${escapeHtmlV17(platform)} · ${escapeHtmlV17(category)}</p>
+              <div class="meta">
+                <span class="hot">점수 ${escapeHtmlV17(score)}</span>
+                <span>${escapeHtmlV17(spread)}</span>
+              </div>
+            </article>
+          `;
+        }).join("");
+      };
+
+      window.updateMobileBottomNav = function (page) {
+        document.querySelectorAll(".mobile-bottom-nav button").forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.mobilePage === page);
+        });
+      };
+
+      const prevShowPage = window.showPage || showPage;
+      window.showPage = function (page) {
+        prevShowPage(page);
+        window.updateMobileBottomNav(page);
+        setTimeout(() => {
+          if (page === "sns-trends") window.renderSnsMobileCards();
+        }, 100);
+      };
+
+      const prevExtended = window.loadSupabaseExtendedData;
+      if (typeof prevExtended === "function") {
+        window.loadSupabaseExtendedData = async function () {
+          await prevExtended();
+
+          const events = window.supabaseRuntime?.economicEvents || [];
+          window.renderEventSearchBoost(events);
+          window.renderEconomicMobileCards(events);
+
+          setTimeout(() => window.renderSnsMobileCards(), 100);
+        };
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const page = location.hash ? location.hash.replace("#", "") : "dashboard";
+        window.updateMobileBottomNav(page);
+        setTimeout(() => {
+          const events = window.supabaseRuntime?.economicEvents || [];
+          if (events.length) {
+            window.renderEventSearchBoost(events);
+            window.renderEconomicMobileCards(events);
+          }
+          window.renderSnsMobileCards();
+        }, 800);
+      });
+    })();
+
     updateUserUI();
     updateSiteInfoUI();
     initPageFromHash();
@@ -4808,5 +5258,14 @@ action: 다음 실행에서 재시도하거나 모델/쿼터 상태를 확인하
 
   </script>
   <div id="toast" class="toast"></div>
+
+  <nav class="mobile-bottom-nav" aria-label="모바일 빠른 메뉴">
+    <button type="button" data-mobile-page="dashboard" onclick="showPage('dashboard')"><span>🏠</span>홈</button>
+    <button type="button" data-mobile-page="keywords" onclick="showPage('keywords')"><span>🔍</span>키워드</button>
+    <button type="button" data-mobile-page="sns-trends" onclick="showPage('sns-trends')"><span>📱</span>SNS</button>
+    <button type="button" data-mobile-page="calendar" onclick="showPage('calendar')"><span>🗓️</span>일정</button>
+    <button type="button" data-mobile-page="logs" onclick="showPage('logs')"><span>🧾</span>로그</button>
+  </nav>
+
 </body>
 </html>
