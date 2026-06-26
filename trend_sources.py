@@ -3,7 +3,8 @@ import re
 import html
 import feedparser
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 from seo_utils import clean_text, score_keyword, is_valid_korean_keyword
 
 GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo={geo}"
@@ -55,52 +56,113 @@ def _get_entry_approx_traffic(entry) -> int:
     return 0
 
 
+def _utc_now_dt() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _utc_now_dt().isoformat()
 
 
-def fetch_google_trends_rss(geo: str = "KR", limit: int = 30) -> pd.DataFrame:
+def _parse_entry_datetime(entry) -> datetime | None:
+    """RSS entry의 published/updated 시간을 UTC datetime으로 변환합니다."""
+    # feedparser가 구조화해준 값 우선 사용
+    for attr in ("published_parsed", "updated_parsed"):
+        value = getattr(entry, attr, None)
+        if value:
+            try:
+                return datetime(*value[:6], tzinfo=timezone.utc)
+            except Exception:
+                pass
+
+    # 문자열 날짜 fallback
+    for attr in ("published", "updated", "created"):
+        raw = getattr(entry, attr, "") or ""
+        raw = clean_text(raw)
+        if not raw:
+            continue
+        try:
+            dt = parsedate_to_datetime(raw)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except Exception:
+            pass
+    return None
+
+
+def _entry_age_hours(entry_dt: datetime | None) -> float | None:
+    if entry_dt is None:
+        return None
+    return max(0.0, (_utc_now_dt() - entry_dt).total_seconds() / 3600)
+
+
+def fetch_google_trends_rss(geo: str = "KR", limit: int = 30, lookback_hours: int = 24) -> pd.DataFrame:
     """Google Trends Trending Now RSS를 best-effort로 읽습니다.
-    Google이 RSS 형식을 바꾸면 실패할 수 있으므로 빈 DataFrame을 반환합니다.
+
+    - 기본값은 최근 24시간 이내 entry를 우선 사용합니다.
+    - Google Trends RSS가 항목별 published 시간을 제공하지 않는 경우가 있어,
+      시간값이 없는 항목은 "현재 Trending RSS 목록"으로 간주해 유지합니다.
     """
+    columns = ["keyword", "source", "approx_traffic", "collected_at", "published_at", "age_hours"]
     try:
         feed = feedparser.parse(GOOGLE_TRENDS_RSS.format(geo=geo))
         rows = []
+        cutoff = _utc_now_dt() - timedelta(hours=max(1, int(lookback_hours or 24)))
         for e in feed.entries[:limit]:
             title = clean_text(html.unescape(getattr(e, "title", "")))
             summary = clean_text(html.unescape(getattr(e, "summary", "")))
             approx = _get_entry_approx_traffic(e)
+            entry_dt = _parse_entry_datetime(e)
+
+            # 시간이 명확하게 있고 24시간보다 오래된 항목은 제외합니다.
+            if entry_dt is not None and entry_dt < cutoff:
+                continue
+
+            age = _entry_age_hours(entry_dt)
             if title:
                 rows.append({
                     "keyword": title,
-                    "source": "google_trends_rss",
+                    "source": "google_trends_rss_24h",
                     "approx_traffic": approx,
                     "collected_at": _utc_now(),
+                    "published_at": entry_dt.isoformat() if entry_dt else "",
+                    "age_hours": round(age, 2) if age is not None else "",
                 })
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=columns)
     except Exception as exc:
         print(f"[WARN] Google Trends RSS fetch failed: {exc}")
-        return pd.DataFrame(columns=["keyword", "source", "approx_traffic", "collected_at"])
+        return pd.DataFrame(columns=columns)
 
 
 def load_seed_keywords(path: str = "data/seed_keywords.csv") -> pd.DataFrame:
+    columns = ["keyword", "source", "approx_traffic", "collected_at", "published_at", "age_hours"]
     if not os.path.exists(path):
-        return pd.DataFrame(columns=["keyword", "source", "approx_traffic", "collected_at"])
+        return pd.DataFrame(columns=columns)
     df = pd.read_csv(path)
     if "keyword" not in df.columns:
-        return pd.DataFrame(columns=["keyword", "source", "approx_traffic", "collected_at"])
+        return pd.DataFrame(columns=columns)
     if "source" not in df.columns:
         df["source"] = "seed"
     if "approx_traffic" not in df.columns:
         df["approx_traffic"] = 0
     df["collected_at"] = _utc_now()
-    return df[["keyword", "source", "approx_traffic", "collected_at"]]
+    df["published_at"] = ""
+    df["age_hours"] = ""
+    return df[columns]
 
 
-def collect_keywords(geo: str = "KR", limit: int = 30) -> pd.DataFrame:
+def collect_keywords(geo: str = "KR", limit: int = 30, lookback_hours: int = 24, include_seed_keywords: bool | None = None) -> pd.DataFrame:
     allow_english = os.environ.get("ALLOW_ENGLISH_KEYWORDS", "false").lower() in {"1", "true", "yes", "y"}
+    if include_seed_keywords is None:
+        include_seed_keywords = os.environ.get("INCLUDE_SEED_KEYWORDS", "false").lower() in {"1", "true", "yes", "y"}
 
-    df = pd.concat([fetch_google_trends_rss(geo, limit), load_seed_keywords()], ignore_index=True)
+    frames = [fetch_google_trends_rss(geo, limit, lookback_hours=lookback_hours)]
+    # 최신 24시간 운영에서는 seed 키워드가 오래된 주제를 섞을 수 있으므로 기본 제외합니다.
+    if include_seed_keywords:
+        frames.append(load_seed_keywords())
+
+    df = pd.concat(frames, ignore_index=True)
     if df.empty:
         return df
 

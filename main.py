@@ -273,7 +273,13 @@ def _article_to_plain_text(article: dict) -> str:
 
 
 def _keyword_dataframe_from_topics(topics: list[str]) -> pd.DataFrame:
-    return pd.DataFrame([{"keyword": topic, "source": "manual"} for topic in topics])
+    return pd.DataFrame([{
+        "keyword": topic,
+        "source": "manual_topic",
+        "approx_traffic": 0,
+        "published_at": "",
+        "age_hours": "",
+    } for topic in topics])
 
 
 
@@ -376,7 +382,7 @@ def _prepare_keywords_with_categories(keywords: pd.DataFrame, allowed_categories
 
 
 
-def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: int, geo: str) -> list[dict]:
+def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: int, geo: str, lookback_hours: int = 24) -> list[dict]:
     """조회수 높은 순으로 작성 후보 아이템을 만들고 근거 뉴스 링크를 붙입니다."""
     items = []
     if keywords.empty:
@@ -403,12 +409,15 @@ def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: 
             limit=links_per_topic,
             geo=geo,
             category_hint=_category_news_hint(category_id),
+            lookback_hours=lookback_hours,
         )
         approx_traffic = _to_int(row.get("approx_traffic_int", row.get("approx_traffic", 0)))
         item = {
             "rank": rank,
             "keyword": keyword,
             "source": str(row.get("source", "")),
+            "published_at": str(row.get("published_at", "")),
+            "age_hours": row.get("age_hours", ""),
             "approx_traffic": approx_traffic,
             "traffic_label": _traffic_label(approx_traffic),
             "score": _to_int(row.get("score", 0)),
@@ -513,7 +522,7 @@ def _select_article_items(items: list[dict], count: int) -> list[dict]:
 def _news_links_html(news: list[dict], limit: int | None = None) -> str:
     """뉴스 링크를 링크1~링크N 라벨로 변환합니다."""
     if not news:
-        return "최근 7일 기준 RSS에서 확인된 링크가 없습니다."
+        return "최근 24시간 기준 RSS에서 확인된 링크가 없습니다."
 
     parts = []
     selected = news[:limit] if limit else news
@@ -551,6 +560,7 @@ def _daily_digest_to_telegram_text(
     hot_issue_count: int,
     card_news_count: int,
     article_count: int,
+    lookback_hours: int = 24,
 ) -> str:
     """최종 운영용 텔레그램 리포트입니다.
 
@@ -562,7 +572,8 @@ def _daily_digest_to_telegram_text(
     lines = [
         "🔥 <b>오늘의 핫이슈 · 카드뉴스 · 작성글 후보</b>",
         f"분야 필터: <b>{html_escape(_allowed_label(allowed_categories))}</b>",
-        "정렬 기준: <b>조회수 많은 순</b> → 근거 기사 수 → 내부 점수",
+        f"수집 기준: <b>최근 {int(lookback_hours)}시간 이내</b>",
+        "정렬 기준: <b>최근 조회수 많은 순</b> → 근거 기사 수 → 내부 점수",
         "기사 URL은 길게 노출하지 않고 <b>링크1~링크5</b> 라벨로 표시합니다.",
     ]
 
@@ -617,8 +628,9 @@ def _daily_digest_to_telegram_text(
         lines.append(f"글방향: {angle}")
 
     lines.append("\n📌 <b>운영 메모</b>")
-    lines.append("조회수는 Google Trends RSS에서 제공되는 approx traffic 기준입니다. 수동/seed 키워드는 조회수 정보가 없으면 하단으로 밀립니다.")
-    lines.append("근거자료는 Google News RSS 최근 7일 기준으로 가져오며, 텔레그램에서는 링크 라벨만 노출됩니다.")
+    lines.append(f"조회수는 Google Trends RSS의 최근 {int(lookback_hours)}시간 기준 approx traffic을 우선 사용합니다.")
+    lines.append(f"근거자료는 Google News RSS 최근 {int(lookback_hours)}시간 기준으로 가져오며, 텔레그램에서는 링크 라벨만 노출됩니다.")
+    lines.append("seed 키워드는 기본 제외됩니다. 필요할 때만 include_seed_keywords=true로 켜세요.")
     return "\n".join(lines)
 
 
@@ -631,6 +643,7 @@ def _ideas_to_telegram_text(items: list[dict], allowed_categories: list[str]) ->
         _safe_int_env("HOT_ISSUE_COUNT", 10),
         _safe_int_env("CARD_NEWS_COUNT", 3),
         _safe_int_env("ARTICLE_COUNT", 3),
+        _safe_int_env("LOOKBACK_HOURS", 24),
     )
 
 
@@ -643,6 +656,8 @@ def main():
     parser.add_argument("--max-posts", type=int, default=int(os.environ.get("MAX_POSTS_PER_RUN", "10")))
     parser.add_argument("--topics", default=os.environ.get("SELECTED_TOPICS", ""))
     parser.add_argument("--category-filter", default=os.environ.get("CATEGORY_FILTER", "finance"))
+    parser.add_argument("--lookback-hours", type=int, default=int(os.environ.get("LOOKBACK_HOURS", "24")))
+    parser.add_argument("--include-seed-keywords", action="store_true")
     parser.add_argument("--no-wordpress", action="store_true")
     parser.add_argument("--send-articles-to-telegram", action="store_true")
     parser.add_argument("--list-only", action="store_true", help="글 초안 생성 없이 작성 후보와 관련 기사 링크만 텔레그램으로 전송")
@@ -668,6 +683,7 @@ def main():
     card_news_count = max(0, _safe_int_env("CARD_NEWS_COUNT", 3))
     article_count = max(0, _safe_int_env("ARTICLE_COUNT", 3))
     allowed_categories = _parse_category_filter(args.category_filter)
+    include_seed_keywords = _env_true("INCLUDE_SEED_KEYWORDS", "false") or args.include_seed_keywords
 
     topics = _parse_topics(args.topics)
 
@@ -679,7 +695,12 @@ def main():
     else:
         # 경제/금융만 필터링하면 전체 트렌드에서 제외되는 항목이 많을 수 있어 여유 있게 수집합니다.
         raw_limit = max(args.max_keywords * 3, args.max_posts * 5, 60)
-        keywords = collect_keywords(args.geo, raw_limit)
+        keywords = collect_keywords(
+            args.geo,
+            raw_limit,
+            lookback_hours=args.lookback_hours,
+            include_seed_keywords=include_seed_keywords,
+        )
 
     keywords.to_csv(f"reports/trend_keywords_raw_{today}.csv", index=False, encoding="utf-8-sig")
     keywords = _prepare_keywords_with_categories(keywords, allowed_categories).head(args.max_keywords)
@@ -687,7 +708,7 @@ def main():
 
     if list_only:
         digest_item_count = max(args.max_posts, hot_issue_count, card_news_count, article_count)
-        items = _build_idea_digest(keywords, digest_item_count, links_per_topic, args.geo)
+        items = _build_idea_digest(keywords, digest_item_count, links_per_topic, args.geo, lookback_hours=args.lookback_hours)
         Path(f"reports/idea_items_{today}.json").write_text(
             json.dumps(items, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -711,6 +732,8 @@ def main():
                 "approx_traffic": item.get("approx_traffic", 0),
                 "traffic_label": item.get("traffic_label", ""),
                 "source": item.get("source", ""),
+                "published_at": item.get("published_at", ""),
+                "age_hours": item.get("age_hours", ""),
                 "recommended_use": " / ".join(uses),
                 "angle": item.get("angle", ""),
                 "evidence_strength": item.get("evidence_strength", ""),
@@ -719,7 +742,7 @@ def main():
             })
         pd.DataFrame(flat_rows).to_csv(f"reports/idea_items_{today}.csv", index=False, encoding="utf-8-sig")
         send_telegram_long(
-            _daily_digest_to_telegram_text(items, allowed_categories, hot_issue_count, card_news_count, article_count),
+            _daily_digest_to_telegram_text(items, allowed_categories, hot_issue_count, card_news_count, article_count, args.lookback_hours),
             parse_mode="HTML",
         )
         return

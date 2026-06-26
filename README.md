@@ -2,24 +2,33 @@
 
 트렌드 키워드를 수집하고, 텔레그램으로 **오늘의 핫이슈 / 오늘의 카드뉴스 / 오늘의 작성글 후보**를 보내는 자동화 패키지입니다. 기본값은 경제·금융 관련 아이템만 우선 활용하며, 긴 글 초안은 미리 생성하지 않습니다.
 
-## 이번 수정 사항 v8
+## 이번 수정 사항 v9
 
-- 전체 후보를 **조회수 많은 순**으로 정렬합니다.
+- 전체 후보를 **최근 24시간 조회수 많은 순**으로 정렬합니다.
 - 텔레그램 리포트 구조를 아래 3개 섹션으로 바꿨습니다.
   - `🔥 오늘의 핫이슈`: 조회수 높은 순으로 TOP 10 정리
   - `🃏 오늘의 카드뉴스`: 카드뉴스로 만들기 좋은 항목 TOP 3 추천
   - `✍️ 오늘의 작성글`: 블로그/워드프레스 글로 작성하기 좋은 항목 TOP 3 추천
 - 대상 항목마다 뒷받침할 수 있는 **관련 신문 기사 링크**를 함께 붙입니다.
 - 기사 URL 원문은 노출하지 않고 `링크1` ~ `링크5` 클릭 라벨로 표시합니다.
-- Google Trends RSS의 `20K+`, `1M+`, `2만+` 같은 조회수 표현을 숫자로 변환해 정렬합니다.
-- 수동/seed 키워드처럼 조회수 정보가 없는 항목은 하단으로 밀립니다.
+- Google Trends RSS의 `20K+`, `1M+`, `2만+` 같은 조회수 표현을 숫자로 변환하고, 최근 24시간 기준으로 정렬합니다.
+- 수동 주제처럼 조회수 정보가 없는 항목은 하단으로 밀립니다. seed 키워드는 기본 제외됩니다.
+
+
+## v9 핵심 변경: 최근 24시간 기준
+
+- Google Trends RSS 항목의 `published/updated` 시간이 확인되면 **최근 24시간 초과 항목은 제외**합니다.
+- Google News RSS 검색어를 `when:1d`로 바꾸고, 기사 발행 시간이 확인되면 **최근 24시간 초과 기사는 제외**합니다.
+- 오래된 seed 키워드가 섞이는 문제를 막기 위해 `INCLUDE_SEED_KEYWORDS=false`를 기본값으로 바꿨습니다.
+- 텔레그램 리포트에 `수집 기준: 최근 24시간 이내`가 표시됩니다.
+- 수동 입력 주제는 조회수 데이터가 없으므로 근거 기사만 최근 24시간 기준으로 붙습니다.
 
 ## 기본 실행
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
-python main.py --max-keywords 30 --max-posts 10 --category-filter finance
+python main.py --max-keywords 30 --max-posts 10 --category-filter finance --lookback-hours 24
 ```
 
 기본값은 아래와 같습니다.
@@ -29,20 +38,23 @@ MAX_KEYWORDS=30
 MAX_POSTS_PER_RUN=10
 ITEM_LIST_ONLY=true
 NEWS_LINKS_PER_TOPIC=5
+LOOKBACK_HOURS=24
+INCLUDE_SEED_KEYWORDS=false
 HOT_ISSUE_COUNT=10
 CARD_NEWS_COUNT=3
 ARTICLE_COUNT=3
 CATEGORY_FILTER=finance
 ```
 
-즉, 최대 30개 키워드를 수집하고 그중 경제·금융 관련 후보를 조회수 순으로 정리한 뒤, 텔레그램에 오늘의 운영 후보만 보냅니다.
+즉, 최대 30개 키워드를 최근 24시간 기준으로 수집하고 그중 경제·금융 관련 후보를 조회수 순으로 정리한 뒤, 텔레그램에 오늘의 운영 후보만 보냅니다.
 
 ## 텔레그램 표시 예시
 
 ```text
 🔥 오늘의 핫이슈 · 카드뉴스 · 작성글 후보
 분야 필터: 경제·금융 우선
-정렬 기준: 조회수 많은 순 → 근거 기사 수 → 내부 점수
+수집 기준: 최근 24시간 이내
+정렬 기준: 최근 조회수 많은 순 → 근거 기사 수 → 내부 점수
 
 🔥 오늘의 핫이슈 TOP 10
 
@@ -78,6 +90,8 @@ CATEGORY_FILTER=finance
 | `category_filter` | `finance` | 경제·금융 우선. `all`이면 전체 카테고리 |
 | `item_list_only` | `true` | 글 초안 생성 없이 후보 리포트만 전송 |
 | `news_links_per_topic` | `5` | 주제별 근거 기사 링크 수 |
+| `lookback_hours` | `24` | 최근 자료 기준 시간 |
+| `include_seed_keywords` | `false` | seed 키워드 포함 여부. 최신 24시간 운영에서는 false 권장 |
 | `hot_issue_count` | `10` | 오늘의 핫이슈 표시 개수 |
 | `card_news_count` | `3` | 오늘의 카드뉴스 추천 개수 |
 | `article_count` | `3` | 오늘의 작성글 추천 개수 |
@@ -112,7 +126,7 @@ topics = 기준금리 전망, 원달러 환율 전망
 
 실행이 끝나면 GitHub Actions artifact로 아래 파일이 저장됩니다.
 
-- `trend_keywords_raw_YYYYMMDD.csv`: 원본 수집 키워드
+- `trend_keywords_raw_YYYYMMDD.csv`: 원본 수집 키워드. 최근 24시간 기준 컬럼 포함
 - `trend_keywords_YYYYMMDD.csv`: 카테고리 필터 후 조회수 정렬 키워드
 - `idea_items_YYYYMMDD.json`: 후보 아이템과 근거 기사 전체 데이터
 - `idea_items_YYYYMMDD.csv`: 순위, 조회수, 추천 용도, 근거 기사 링크 요약
