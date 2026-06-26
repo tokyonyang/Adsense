@@ -1,5 +1,5 @@
 """
-기존 루트 main.py를 그대로 두고 이벤트 부스트만 먼저 적용하고 싶을 때 사용하는 wrapper.
+기존 루트 main.py를 그대로 두고 이벤트 부스트 + 텔레그램 요약을 적용하는 wrapper.
 
 GitHub Actions에서 기존:
     python main.py

@@ -5,17 +5,18 @@ import json
 from app.services.event_boost_service import get_today_event_boost_config
 from app.services.keyword_service import KeywordService
 from app.services.sns_trend_service import SnsTrendService
+from app.services.telegram_report_service import send_pipeline_summary_report
 
 
 def main():
     """
-    v1.9 자동 파이프라인.
+    v1.10 자동 파이프라인.
 
-    흐름:
-    1. economic_events에서 오늘~내일 주요 경제지표 확인
-    2. high/critical 이벤트가 있으면 키워드 수집량과 근거자료 수집량 상향
-    3. 이벤트 관련 seed keywords를 키워드 수집에 추가
-    4. 기존 SNS 트렌드 수집도 함께 실행
+    v1.9:
+    - 경제지표 이벤트일에 키워드/근거자료 수집량 자동 상향
+
+    v1.10:
+    - 이벤트 부스트 결과를 텔레그램 리포트에 함께 표시
     """
     boost = get_today_event_boost_config(days_before=0, days_after=1)
 
@@ -25,7 +26,7 @@ def main():
         max_keywords=boost.max_keywords,
         seed_keywords=boost.event_keywords,
         news_links_per_topic=boost.news_links_per_topic,
-        run_source="daily_pipeline_v1_9",
+        run_source="daily_pipeline_v1_10",
         boost_summary=boost.to_dict(),
     )
 
@@ -35,16 +36,32 @@ def main():
         limit=30 if not boost.enabled else 50,
     )
 
+    keyword_summary = {
+        "inserted": keyword_result.get("inserted"),
+        "max_keywords": keyword_result.get("max_keywords"),
+        "news_links_per_topic": keyword_result.get("news_links_per_topic"),
+        "seed_keywords_count": len(keyword_result.get("seed_keywords") or []),
+    }
+
+    sns_summary = {
+        "inserted": sns_result.get("inserted"),
+    }
+
+    telegram_result = send_pipeline_summary_report(
+        boost=boost.to_dict(),
+        keyword_result=keyword_summary,
+        sns_result=sns_summary,
+    )
+
     result = {
         "event_boost": boost.to_dict(),
-        "keyword_result": {
-            "inserted": keyword_result.get("inserted"),
-            "max_keywords": keyword_result.get("max_keywords"),
-            "news_links_per_topic": keyword_result.get("news_links_per_topic"),
-            "seed_keywords_count": len(keyword_result.get("seed_keywords") or []),
-        },
-        "sns_result": {
-            "inserted": sns_result.get("inserted"),
+        "keyword_result": keyword_summary,
+        "sns_result": sns_summary,
+        "telegram_result": {
+            "ok": telegram_result.get("ok"),
+            "skipped": telegram_result.get("skipped", False),
+            "sent_parts": telegram_result.get("sent_parts", 0),
+            "reason": telegram_result.get("reason"),
         },
     }
 
