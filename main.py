@@ -436,6 +436,124 @@ def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: 
 
 
 
+
+
+def _evidence_item_count(items: list[dict]) -> int:
+    """근거 뉴스가 1개 이상 붙은 항목 수입니다."""
+    return sum(1 for item in items if len(item.get("news") or []) > 0)
+
+
+def _fallback_stage_label(categories: list[str], lookback_hours: int) -> str:
+    return f"{_allowed_label(categories)} / 최근 {int(lookback_hours)}시간"
+
+
+def _collect_keywords_for_stage(
+    args,
+    topics: list[str],
+    allowed_categories: list[str],
+    include_seed_keywords: bool,
+    lookback_hours: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """단계별 키워드 수집 + 카테고리 필터링을 수행합니다."""
+    if topics:
+        raw_keywords = _keyword_dataframe_from_topics(topics).head(args.max_keywords)
+    else:
+        # 카테고리 필터링 후에도 충분한 후보가 남도록 원본은 여유 있게 가져옵니다.
+        raw_limit = max(args.max_keywords * 4, args.max_posts * 8, 100)
+        raw_keywords = collect_keywords(
+            args.geo,
+            raw_limit,
+            lookback_hours=lookback_hours,
+            include_seed_keywords=include_seed_keywords,
+        )
+    prepared = _prepare_keywords_with_categories(raw_keywords, allowed_categories).head(args.max_keywords)
+    return raw_keywords, prepared
+
+
+def _build_idea_digest_with_fallback(
+    args,
+    topics: list[str],
+    initial_categories: list[str],
+    include_seed_keywords: bool,
+    max_items: int,
+    links_per_topic: int,
+    base_lookback_hours: int,
+    auto_fallback: bool = True,
+    fallback_lookback_hours: int = 48,
+) -> tuple[list[dict], pd.DataFrame, pd.DataFrame, list[str], int, list[dict]]:
+    """후보가 없거나 근거 기사가 전혀 없을 때 자동으로 범위를 확장합니다.
+
+    단계:
+    1. 요청 카테고리 + 최근 24시간
+    2. 전체 카테고리 + 최근 24시간
+    3. 전체 카테고리 + 최근 48시간
+    """
+    all_categories = list(CATEGORY_GROUPS.keys())
+    base_hours = max(1, int(base_lookback_hours or 24))
+    fallback_hours = max(base_hours, int(fallback_lookback_hours or 48))
+
+    stages: list[tuple[str, list[str], int]] = [
+        ("기본 검색", initial_categories, base_hours),
+    ]
+    if auto_fallback and set(initial_categories) != set(all_categories):
+        stages.append(("카테고리 전체 확장", all_categories, base_hours))
+    if auto_fallback and fallback_hours > base_hours:
+        stages.append(("시간 범위 48시간 확장", all_categories, fallback_hours))
+
+    fallback_info: list[dict] = []
+    best_payload = None
+
+    for stage_name, stage_categories, stage_hours in stages:
+        raw_keywords, prepared_keywords = _collect_keywords_for_stage(
+            args,
+            topics,
+            stage_categories,
+            include_seed_keywords,
+            stage_hours,
+        )
+        items = _build_idea_digest(
+            prepared_keywords,
+            max_items,
+            links_per_topic,
+            args.geo,
+            lookback_hours=stage_hours,
+        )
+        evidence_count = _evidence_item_count(items)
+        info = {
+            "name": stage_name,
+            "label": _fallback_stage_label(stage_categories, stage_hours),
+            "category_ids": stage_categories,
+            "lookback_hours": stage_hours,
+            "keyword_count": int(len(prepared_keywords)),
+            "item_count": int(len(items)),
+            "evidence_count": int(evidence_count),
+            "used": False,
+        }
+        fallback_info.append(info)
+
+        payload = (items, raw_keywords, prepared_keywords, stage_categories, stage_hours, fallback_info)
+        # 최종 실패 시에도 빈 결과보다 후보가 있는 결과를 보여주기 위한 보관값입니다.
+        if best_payload is None or (evidence_count, len(items)) > (_evidence_item_count(best_payload[0]), len(best_payload[0])):
+            best_payload = payload
+
+        # 근거 기사까지 1개 이상 붙은 후보가 있으면 그 단계를 사용합니다.
+        if items and evidence_count > 0:
+            info["used"] = True
+            return payload
+
+    # 그래도 근거 있는 후보가 없으면 가장 나은 단계 결과를 사용합니다.
+    if best_payload is not None:
+        items, raw_keywords, prepared_keywords, stage_categories, stage_hours, info_list = best_payload
+        # 동일한 info 객체를 찾아 사용 표시합니다.
+        for info in info_list:
+            if info.get("category_ids") == stage_categories and int(info.get("lookback_hours", 0)) == int(stage_hours):
+                info["used"] = True
+                break
+        return best_payload
+
+    return [], pd.DataFrame(), pd.DataFrame(), initial_categories, base_hours, fallback_info
+
+
 def _html_attr(text: str) -> str:
     """HTML 링크 속성에 넣을 값을 안전하게 이스케이프합니다."""
     return html_lib.escape(str(text or ""), quote=True)
@@ -522,7 +640,7 @@ def _select_article_items(items: list[dict], count: int) -> list[dict]:
 def _news_links_html(news: list[dict], limit: int | None = None) -> str:
     """뉴스 링크를 링크1~링크N 라벨로 변환합니다."""
     if not news:
-        return "최근 24시간 기준 RSS에서 확인된 링크가 없습니다."
+        return "지정 기간 기준 RSS에서 확인된 링크가 없습니다."
 
     parts = []
     selected = news[:limit] if limit else news
@@ -561,6 +679,7 @@ def _daily_digest_to_telegram_text(
     card_news_count: int,
     article_count: int,
     lookback_hours: int = 24,
+    fallback_info: list[dict] | None = None,
 ) -> str:
     """최종 운영용 텔레그램 리포트입니다.
 
@@ -569,13 +688,24 @@ def _daily_digest_to_telegram_text(
     2) 오늘의 카드뉴스: 카드뉴스 제작 추천 항목
     3) 오늘의 작성글: 블로그/워드프레스 작성 추천 항목
     """
+    evidence_items_count = sum(1 for item in items if len(item.get("news") or []) > 0)
     lines = [
         "🔥 <b>오늘의 핫이슈 · 카드뉴스 · 작성글 후보</b>",
         f"분야 필터: <b>{html_escape(_allowed_label(allowed_categories))}</b>",
         f"수집 기준: <b>최근 {int(lookback_hours)}시간 이내</b>",
         "정렬 기준: <b>최근 조회수 많은 순</b> → 근거 기사 수 → 내부 점수",
+        f"근거자료 포함: <b>{evidence_items_count}/{len(items)}</b>개 항목",
         "기사 URL은 길게 노출하지 않고 <b>링크1~링크5</b> 라벨로 표시합니다.",
     ]
+
+    if fallback_info:
+        lines.append("\n🔎 <b>자동 대체 검색 로그</b>")
+        for idx, stage in enumerate(fallback_info, 1):
+            label = html_escape(stage.get("label", ""))
+            item_count = int(stage.get("item_count", 0) or 0)
+            evidence_count = int(stage.get("evidence_count", 0) or 0)
+            used = " → <b>사용</b>" if stage.get("used") else ""
+            lines.append(f"{idx}) {label}: 후보 {item_count}개 / 근거 포함 {evidence_count}개{used}")
 
     if not items:
         lines.append("\n수집된 작성 후보가 없습니다. 카테고리 필터 또는 선택 주제를 확인해주세요.")
@@ -684,31 +814,31 @@ def main():
     article_count = max(0, _safe_int_env("ARTICLE_COUNT", 3))
     allowed_categories = _parse_category_filter(args.category_filter)
     include_seed_keywords = _env_true("INCLUDE_SEED_KEYWORDS", "false") or args.include_seed_keywords
+    auto_fallback = _env_true("AUTO_FALLBACK", "true")
+    fallback_lookback_hours = _safe_int_env("FALLBACK_LOOKBACK_HOURS", 48)
 
     topics = _parse_topics(args.topics)
 
     Path("reports").mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
 
-    if topics:
-        keywords = _keyword_dataframe_from_topics(topics).head(args.max_keywords)
-    else:
-        # 경제/금융만 필터링하면 전체 트렌드에서 제외되는 항목이 많을 수 있어 여유 있게 수집합니다.
-        raw_limit = max(args.max_keywords * 3, args.max_posts * 5, 60)
-        keywords = collect_keywords(
-            args.geo,
-            raw_limit,
-            lookback_hours=args.lookback_hours,
-            include_seed_keywords=include_seed_keywords,
-        )
-
-    keywords.to_csv(f"reports/trend_keywords_raw_{today}.csv", index=False, encoding="utf-8-sig")
-    keywords = _prepare_keywords_with_categories(keywords, allowed_categories).head(args.max_keywords)
-    keywords.to_csv(f"reports/trend_keywords_{today}.csv", index=False, encoding="utf-8-sig")
-
+    # list_only 모드에서는 후보/근거가 부족할 때 자동 대체 검색을 수행합니다.
+    # 글 초안 생성 모드에서는 기존처럼 요청 필터만 사용합니다.
     if list_only:
         digest_item_count = max(args.max_posts, hot_issue_count, card_news_count, article_count)
-        items = _build_idea_digest(keywords, digest_item_count, links_per_topic, args.geo, lookback_hours=args.lookback_hours)
+        items, raw_keywords, keywords, effective_categories, effective_lookback_hours, fallback_info = _build_idea_digest_with_fallback(
+            args=args,
+            topics=topics,
+            initial_categories=allowed_categories,
+            include_seed_keywords=include_seed_keywords,
+            max_items=digest_item_count,
+            links_per_topic=links_per_topic,
+            base_lookback_hours=args.lookback_hours,
+            auto_fallback=auto_fallback,
+            fallback_lookback_hours=fallback_lookback_hours,
+        )
+        raw_keywords.to_csv(f"reports/trend_keywords_raw_{today}.csv", index=False, encoding="utf-8-sig")
+        keywords.to_csv(f"reports/trend_keywords_{today}.csv", index=False, encoding="utf-8-sig")
         Path(f"reports/idea_items_{today}.json").write_text(
             json.dumps(items, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -742,10 +872,28 @@ def main():
             })
         pd.DataFrame(flat_rows).to_csv(f"reports/idea_items_{today}.csv", index=False, encoding="utf-8-sig")
         send_telegram_long(
-            _daily_digest_to_telegram_text(items, allowed_categories, hot_issue_count, card_news_count, article_count, args.lookback_hours),
+            _daily_digest_to_telegram_text(
+                items,
+                effective_categories,
+                hot_issue_count,
+                card_news_count,
+                article_count,
+                effective_lookback_hours,
+                fallback_info=fallback_info,
+            ),
             parse_mode="HTML",
         )
         return
+
+    raw_keywords, keywords = _collect_keywords_for_stage(
+        args,
+        topics,
+        allowed_categories,
+        include_seed_keywords,
+        args.lookback_hours,
+    )
+    raw_keywords.to_csv(f"reports/trend_keywords_raw_{today}.csv", index=False, encoding="utf-8-sig")
+    keywords.to_csv(f"reports/trend_keywords_{today}.csv", index=False, encoding="utf-8-sig")
 
     results = []
     for _, row in keywords.head(args.max_posts).iterrows():
