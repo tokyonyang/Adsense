@@ -23,6 +23,18 @@ on:
         description: "주제별 관련 신문 기사 링크 수"
         required: false
         default: "5"
+      lookback_hours:
+        description: "최근 자료 기준 시간. 기본 24=최근 24시간"
+        required: false
+        default: "24"
+      include_seed_keywords:
+        description: "최근 트렌드가 부족할 때 seed 키워드까지 포함"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
       hot_issue_count:
         description: "오늘의 핫이슈에 보여줄 항목 수"
         required: false
@@ -92,6 +104,8 @@ jobs:
           CATEGORY_FILTER: ${{ inputs.category_filter || 'finance' }}
           ITEM_LIST_ONLY: ${{ inputs.item_list_only || 'true' }}
           NEWS_LINKS_PER_TOPIC: ${{ inputs.news_links_per_topic || '5' }}
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours || '24' }}
+          INCLUDE_SEED_KEYWORDS: ${{ inputs.include_seed_keywords || 'false' }}
           HOT_ISSUE_COUNT: ${{ inputs.hot_issue_count || '10' }}
           CARD_NEWS_COUNT: ${{ inputs.card_news_count || '3' }}
           ARTICLE_COUNT: ${{ inputs.article_count || '3' }}
@@ -100,7 +114,7 @@ jobs:
           SEND_ARTICLE_ON_WP_FAIL: false
           # true로 바꾸면 iPhone, GPT 같은 영어 키워드도 허용합니다.
           ALLOW_ENGLISH_KEYWORDS: false
-        run: python main.py --max-keywords 30 --max-posts 10 --category-filter "${{ inputs.category_filter || 'finance' }}"
+        run: python main.py --max-keywords 30 --max-posts 10 --category-filter "${{ inputs.category_filter || 'finance' }}" --lookback-hours "${{ inputs.lookback_hours || '24' }}"
 
       - name: Upload reports
         if: always()
