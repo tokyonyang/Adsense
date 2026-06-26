@@ -97,9 +97,10 @@ on:
           - "true"
   schedule:
     # 하루 4회 자동 실행 (GitHub Actions cron은 UTC 기준)
-    # 06:00 KST = 21:00 UTC(전일), 11:00 KST = 02:00 UTC
-    # 15:00 KST = 06:00 UTC, 19:00 KST = 10:00 UTC
-    - cron: "0 2,6,10,21 * * *"
+    # GitHub Actions는 정각(:00)에 부하가 몰려 지연/누락될 수 있어 7분 지연 실행
+    # 06:07 KST = 21:07 UTC(전일), 11:07 KST = 02:07 UTC
+    # 15:07 KST = 06:07 UTC, 19:07 KST = 10:07 UTC
+    - cron: "7 2,6,10,21 * * *"
 
 permissions:
   contents: read
@@ -156,6 +157,18 @@ jobs:
           # true로 바꾸면 iPhone, GPT 같은 영어 키워드도 허용합니다.
           ALLOW_ENGLISH_KEYWORDS: false
         run: python main.py --max-keywords 30 --max-posts 10 --category-filter "${{ inputs.category_filter || 'finance' }}" --lookback-hours "${{ inputs.lookback_hours || '24' }}"
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          MSG="⚠️ AdSense 리포트 자동 실행 실패\n\n실행 시간: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')\n워크플로우: $GITHUB_WORKFLOW\n실행 URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            -d "disable_web_page_preview=true" || true
 
       - name: Upload reports
         if: always()
