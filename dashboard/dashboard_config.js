@@ -10,7 +10,7 @@ window.DASHBOARD_CONFIG = {
 
   // Supabase Project Settings > API > anon public key
   // 예: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-  SUPABASE_ANON_KEY: "PASTE_SUPABASE_ANON_PUBLIC_KEY_HERE",
+  SUPABASE_ANON_KEY: sb_publishable_xCxSbHlpr-mYGVS2hxOeoA_AGS3rdGu
 
   // 60초마다 자동 새로고침. 원하지 않으면 0으로 변경.
   REFRESH_SECONDS: 60
