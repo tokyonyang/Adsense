@@ -1,0 +1,19 @@
+# Dashboard/Supabase secrets
+.env
+.env.*
+!.env.example
+!.env.example.dashboard
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
