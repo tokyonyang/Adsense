@@ -1,0 +1,231 @@
+{
+  "name": "AdSense SEO Dashboard API Blueprint v1",
+  "baseUrl": "/api",
+  "groups": [
+    {
+      "group": "auth/profile",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/me",
+          "desc": "현재 사용자 프로필 조회"
+        },
+        {
+          "method": "PATCH",
+          "path": "/me/profile",
+          "desc": "관심 카테고리/콘텐츠 목적/운영채널 저장"
+        },
+        {
+          "method": "GET",
+          "path": "/usage",
+          "desc": "회원 등급별 사용량 조회"
+        }
+      ]
+    },
+    {
+      "group": "dashboard",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/dashboard/summary",
+          "desc": "KPI, 오늘의 추천 액션, 연동 상태 반환"
+        },
+        {
+          "method": "GET",
+          "path": "/dashboard/actions",
+          "desc": "오늘 운영자가 해야 할 추천 액션 반환"
+        }
+      ]
+    },
+    {
+      "group": "keywords/issues",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/run/collect-keywords",
+          "desc": "키워드 수집 수동 실행"
+        },
+        {
+          "method": "POST",
+          "path": "/run/full",
+          "desc": "키워드 수집부터 후보 생성까지 전체 실행"
+        },
+        {
+          "method": "GET",
+          "path": "/keywords",
+          "desc": "수집 키워드 목록 조회"
+        },
+        {
+          "method": "PATCH",
+          "path": "/keywords/:id",
+          "desc": "키워드 상태/카테고리 수정"
+        },
+        {
+          "method": "GET",
+          "path": "/issues/top",
+          "desc": "오늘의 핫이슈 TOP N 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/issues/:id/convert",
+          "desc": "글/카드뉴스/상품 후보로 전환"
+        }
+      ]
+    },
+    {
+      "group": "evidence",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/evidence",
+          "desc": "근거자료 목록 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/evidence/refresh",
+          "desc": "선택 키워드 근거자료 재수집"
+        },
+        {
+          "method": "PATCH",
+          "path": "/evidence/:id",
+          "desc": "신뢰도/사용 메모/링크 상태 수정"
+        }
+      ]
+    },
+    {
+      "group": "sns trends",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/sns/collect",
+          "desc": "Google/YouTube/Naver 등 SNS·플랫폼 트렌드 수집"
+        },
+        {
+          "method": "GET",
+          "path": "/sns/trends",
+          "desc": "SNS 트렌드 목록 조회"
+        },
+        {
+          "method": "GET",
+          "path": "/sns/trends/:id",
+          "desc": "트렌드 상세 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/sns/trends/:id/convert",
+          "desc": "글감/카드뉴스/상품소싱 후보로 전환"
+        }
+      ]
+    },
+    {
+      "group": "economic calendar",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/economic-events",
+          "desc": "주간/월간 경제지표 일정 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/economic-events",
+          "desc": "경제지표 일정 수동 추가"
+        },
+        {
+          "method": "PATCH",
+          "path": "/economic-events/:id",
+          "desc": "실제치/상태/콘텐츠 활용 수정"
+        },
+        {
+          "method": "POST",
+          "path": "/economic-events/:id/convert",
+          "desc": "경제지표 기반 글감/카드뉴스 생성"
+        }
+      ]
+    },
+    {
+      "group": "content",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/ideas",
+          "desc": "콘텐츠 후보 목록 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/articles/generate",
+          "desc": "SEO 글 초안 생성"
+        },
+        {
+          "method": "PATCH",
+          "path": "/articles/:id",
+          "desc": "글 초안 수정"
+        },
+        {
+          "method": "POST",
+          "path": "/cardnews/generate",
+          "desc": "카드뉴스 구성안 생성"
+        },
+        {
+          "method": "POST",
+          "path": "/ab/generate",
+          "desc": "제목/썸네일 A/B 후보 생성"
+        },
+        {
+          "method": "POST",
+          "path": "/seo/check",
+          "desc": "SEO/애드센스 안전도 검수 실행"
+        }
+      ]
+    },
+    {
+      "group": "publish",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/calendar",
+          "desc": "콘텐츠 캘린더 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/calendar",
+          "desc": "발행 일정 추가"
+        },
+        {
+          "method": "POST",
+          "path": "/publish/wordpress",
+          "desc": "워드프레스 초안/즉시 발행"
+        },
+        {
+          "method": "POST",
+          "path": "/send/telegram",
+          "desc": "텔레그램 리포트 전송"
+        },
+        {
+          "method": "GET",
+          "path": "/publish/logs",
+          "desc": "발행/전송 이력 조회"
+        }
+      ]
+    },
+    {
+      "group": "admin/support",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/logs",
+          "desc": "실행 로그 조회"
+        },
+        {
+          "method": "POST",
+          "path": "/support",
+          "desc": "문의 접수"
+        },
+        {
+          "method": "GET",
+          "path": "/integrations/status",
+          "desc": "외부 연동 상태 확인"
+        }
+      ]
+    }
+  ]
+}
