@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AdSense SEO 회원제 자동화 대시보드</title>
+  <title>AdSense SEO 운영 대시보드 v1.1</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -1033,6 +1033,79 @@
       letter-spacing: -0.04em;
     }
 
+
+    /* v1.1 운영모드: 회원 기능 임시 비활성화 */
+    .member-disabled,
+    .user-box,
+    a[data-page="login"],
+    a[data-page="profile"],
+    a[data-page="members"] {
+      display: none !important;
+    }
+
+    .click-card {
+      cursor: pointer;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+
+    .click-card:hover {
+      transform: translateY(-2px);
+      border-color: #93c5fd;
+      box-shadow: 0 14px 32px rgba(37, 99, 235, 0.12);
+    }
+
+    .dashboard-link-list {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .dashboard-link {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 14px;
+      padding: 13px 14px;
+      text-decoration: none;
+      color: #374151;
+      font-weight: 900;
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .dashboard-link:hover {
+      border-color: #93c5fd;
+      color: var(--blue);
+    }
+
+    .mode-notice {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      border-radius: 14px;
+      padding: 13px 15px;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.55;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 1200px) {
+      .dashboard-link-list {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 760px) {
+      .dashboard-link-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 1200px) {
       .platform-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -1093,7 +1166,7 @@
 
 
       <div class="user-box">
-        <strong id="sidebarUserName">방문자 모드</strong>
+        <strong id="sidebarUserName">운영자 모드</strong>
         <span id="sidebarUserPlan">로그인하면 맞춤 추천이 활성화됩니다.</span>
         <div class="user-actions">
           <button class="btn-soft" style="padding:8px 10px; font-size:12px;" onclick="showPage('login')">로그인</button>
@@ -1154,36 +1227,51 @@
           </div>
 
           <div class="actions">
-            <button class="btn-blue" onclick="notify('키워드 수집/분석 API 연결 예정입니다.')">▶ 지금 실행</button>
-            <button class="btn-soft" onclick="notify('텔레그램 전송 API 연결 예정입니다.')">📨 텔레그램 전송</button>
-            <button class="btn-green" onclick="notify('워드프레스 발행 API 연결 예정입니다.')">🟢 워드프레스 발행</button>
+            <button class="btn-blue" onclick="showPage('keywords')">▶ 키워드 수집</button>
+            <button class="btn-soft" onclick="showPage('telegram')">📨 텔레그램</button>
+            <button class="btn-green" onclick="showPage('publish')">🟢 발행관리</button>
           </div>
         </header>
 
+        <div class="mode-notice">
+          현재는 <b>운영자 단일모드</b>로 정리했습니다. 회원가입/로그인/구독 기능은 추후 실제 DB 연동 단계에서 다시 활성화할 예정입니다.
+        </div>
+
+        <div class="dashboard-link-list">
+          <a class="dashboard-link" href="#keywords" data-go="keywords">🔍 키워드 수집 <span>→</span></a>
+          <a class="dashboard-link" href="#issues" data-go="issues">🔥 핫이슈 분석 <span>→</span></a>
+          <a class="dashboard-link" href="#sns-trends" data-go="sns-trends">📱 SNS 트렌드 <span>→</span></a>
+          <a class="dashboard-link" href="#calendar" data-go="calendar">🗓️ 콘텐츠 캘린더 <span>→</span></a>
+          <a class="dashboard-link" href="#evidence" data-go="evidence">🔗 근거자료 관리 <span>→</span></a>
+          <a class="dashboard-link" href="#seo-check" data-go="seo-check">✅ SEO 검수 <span>→</span></a>
+          <a class="dashboard-link" href="#publish" data-go="publish">🚀 발행관리 <span>→</span></a>
+          <a class="dashboard-link" href="#telegram" data-go="telegram">📨 텔레그램 <span>→</span></a>
+        </div>
+
         <section class="kpi-grid">
-          <div class="card kpi"><div class="label">수집 키워드</div><div class="value">128</div><div class="sub">최근 24시간</div></div>
-          <div class="card kpi"><div class="label">핫이슈 후보</div><div class="value">10</div><div class="sub">TOP 10 선정</div></div>
-          <div class="card kpi"><div class="label">카드뉴스 추천</div><div class="value">3</div><div class="sub">초안 가능</div></div>
-          <div class="card kpi"><div class="label">작성글 초안</div><div class="value">3</div><div class="sub">초안 생성됨</div></div>
-          <div class="card kpi"><div class="label">발행 대기</div><div class="value">2</div><div class="sub">검토 후 발행</div></div>
-          <div class="card kpi"><div class="label">자동화 상태</div><div class="value" style="color:var(--green)">정상</div><div class="sub">모든 모듈 정상</div></div>
+          <div class="card kpi click-card" onclick="showPage('keywords')"><div class="label">수집 키워드</div><div class="value">128</div><div class="sub">최근 24시간</div></div>
+          <div class="card kpi click-card" onclick="showPage('issues')"><div class="label">핫이슈 후보</div><div class="value">10</div><div class="sub">TOP 10 선정</div></div>
+          <div class="card kpi click-card" onclick="showPage('card-news')"><div class="label">카드뉴스 추천</div><div class="value">3</div><div class="sub">초안 가능</div></div>
+          <div class="card kpi click-card" onclick="showPage('drafts')"><div class="label">작성글 초안</div><div class="value">3</div><div class="sub">초안 생성됨</div></div>
+          <div class="card kpi click-card" onclick="showPage('publish')"><div class="label">발행 대기</div><div class="value">2</div><div class="sub">검토 후 발행</div></div>
+          <div class="card kpi click-card" onclick="showPage('logs')"><div class="label">자동화 상태</div><div class="value" style="color:var(--green)">정상</div><div class="sub">모든 모듈 정상</div></div>
         </section>
 
         <section class="card panel" style="margin-bottom:18px;">
           <div class="panel-title">
-            <h2>👤 사용자별 최적화</h2>
-            <span class="badge purple" id="personalStatusBadge">방문자 모드</span>
+            <h2>🛠️ 운영 설정 요약</h2>
+            <span class="badge purple" id="personalStatusBadge">운영자 모드</span>
           </div>
           <div class="three-grid">
             <div class="mini-card">
               <h3>관심 카테고리</h3>
-              <p id="dashboardUserCategories">로그인 후 관심 카테고리를 설정하면 대시보드 추천 순서가 개인화됩니다.</p>
-              <button class="btn-soft" onclick="showPage('profile')">내 최적화 설정</button>
+              <p id="dashboardUserCategories">카테고리 필터와 자동 수집 조건을 기준으로 추천 순서가 정리됩니다.</p>
+              <button class="btn-soft" onclick="showPage('settings')">설정 확인</button>
             </div>
             <div class="mini-card">
               <h3>콘텐츠 목적</h3>
               <p id="dashboardUserGoal">애드센스 승인용, 수익형 블로그, 카드뉴스 운영 등 목적별 추천을 제공합니다.</p>
-              <button class="btn-soft" onclick="showPage('members')">회원 기능 보기</button>
+              <button class="btn-soft" onclick="showPage('about')">운영 구조 보기</button>
             </div>
             <div class="mini-card">
               <h3>발행 환경</h3>
@@ -1327,9 +1415,9 @@
           <div class="card panel">
             <div class="panel-title"><h2>📰 오늘의 카드뉴스 추천</h2><a href="#card-news" data-go="card-news" style="color:var(--blue); font-weight:900; font-size:13px; text-decoration:none;">전체 보기</a></div>
             <div class="idea-cards">
-              <div class="idea-card"><div class="thumb">📈</div><h3>한눈에 보는 기준금리 전망</h3><p>금리 인하 기대감과 대출·예금 영향 정리</p><button class="btn-soft" onclick="notify('카드뉴스 초안 생성 API 연결 예정입니다.')">초안 만들기</button></div>
-              <div class="idea-card"><div class="thumb">💵</div><h3>원달러 환율 급등 원인 3가지</h3><p>환율 오름세가 생활비와 투자에 미치는 영향</p><button class="btn-soft" onclick="notify('카드뉴스 초안 생성 API 연결 예정입니다.')">초안 만들기</button></div>
-              <div class="idea-card"><div class="thumb">📊</div><h3>코스피 상승 의미와 전망</h3><p>추가 상승 가능성과 확인해야 할 지표</p><button class="btn-soft" onclick="notify('카드뉴스 초안 생성 API 연결 예정입니다.')">초안 만들기</button></div>
+              <div class="idea-card"><div class="thumb">📈</div><h3>한눈에 보는 기준금리 전망</h3><p>금리 인하 기대감과 대출·예금 영향 정리</p><button class="btn-soft" onclick="showPage('card-news')">초안 만들기</button></div>
+              <div class="idea-card"><div class="thumb">💵</div><h3>원달러 환율 급등 원인 3가지</h3><p>환율 오름세가 생활비와 투자에 미치는 영향</p><button class="btn-soft" onclick="showPage('card-news')">초안 만들기</button></div>
+              <div class="idea-card"><div class="thumb">📊</div><h3>코스피 상승 의미와 전망</h3><p>추가 상승 가능성과 확인해야 할 지표</p><button class="btn-soft" onclick="showPage('card-news')">초안 만들기</button></div>
             </div>
           </div>
 
@@ -1757,7 +1845,7 @@
             <p>Google, YouTube, X, TikTok, Instagram, 네이버 등 플랫폼별 일일 트렌드를 콘텐츠와 상품 소싱 관점으로 분류합니다.</p>
           </div>
           <div class="actions">
-            <button class="btn-blue" onclick="notify('SNS 트렌드 수집 API 연결 예정입니다.')">오늘 트렌드 수집</button>
+            <button class="btn-blue" onclick="showPage('sns-trends')">오늘 트렌드 수집</button>
             <button class="btn-soft" onclick="notify('선택 트렌드 리포트 전송 기능 연결 예정입니다.')">텔레그램 리포트</button>
             <button class="btn-green" onclick="notify('상품 소싱 후보 저장 기능 연결 예정입니다.')">소싱 후보 저장</button>
           </div>
@@ -2347,7 +2435,7 @@
           </div>
           <div class="actions">
             <button class="btn-soft" onclick="showPage('privacy')">개인정보방침 확인</button>
-            <button class="btn-soft" onclick="showPage('members')">회원제 안내</button>
+            <button class="btn-soft" onclick="showPage('about')">회원제 안내</button>
           </div>
         </header>
 
@@ -2379,7 +2467,7 @@
             <label class="check" style="margin-top:14px;"><input type="checkbox" checked> 개인정보방침 및 서비스 이용 안내에 동의합니다.</label>
             <div class="actions" style="justify-content:flex-start; margin-top:16px;">
               <button class="btn-blue" onclick="mockLogin()">로그인/회원가입</button>
-              <button class="btn-gray" onclick="mockLogout()">방문자 모드</button>
+              <button class="btn-gray" onclick="mockLogout()">운영자 모드</button>
             </div>
             <div class="empty-note" style="margin-top:14px;">
               실제 서비스에서는 Supabase Auth 또는 OAuth 로그인으로 연결하고, 비밀번호는 직접 저장하지 않는 구조를 권장합니다.
@@ -2499,7 +2587,7 @@
           </div>
           <div class="actions">
             <button class="btn-blue" onclick="showPage('login')">회원가입</button>
-            <button class="btn-soft" onclick="showPage('profile')">내 최적화 설정</button>
+            <button class="btn-soft" onclick="showPage('settings')">설정 확인</button>
           </div>
         </header>
 
@@ -2746,6 +2834,18 @@
       });
     });
 
+
+    const disabledPages = new Set(["login", "profile", "members"]);
+
+    const originalShowPage = showPage;
+    showPage = function(page) {
+      if (disabledPages.has(page)) {
+        toast("회원 기능은 아직 비활성화되어 있습니다. 운영 설정 화면으로 이동합니다.");
+        page = "settings";
+      }
+      originalShowPage(page);
+    };
+
     window.addEventListener("hashchange", () => {
       const page = location.hash.replace("#", "") || "dashboard";
       showPage(page);
@@ -2945,7 +3045,7 @@
     function mockLogout() {
       localStorage.removeItem("adsenseUser");
       updateUserUI();
-      toast("방문자 모드로 전환되었습니다.");
+      toast("운영자 모드로 전환되었습니다.");
       showPage("dashboard");
     }
 
@@ -2977,16 +3077,16 @@
       const badge = document.getElementById("personalStatusBadge");
 
       if (!user) {
-        if (sidebarName) sidebarName.textContent = "방문자 모드";
+        if (sidebarName) sidebarName.textContent = "운영자 모드";
         if (sidebarPlan) sidebarPlan.textContent = "로그인하면 맞춤 추천이 활성화됩니다.";
         if (badge) {
-          badge.textContent = "방문자 모드";
+          badge.textContent = "운영자 모드";
           badge.className = "badge purple";
         }
         const cats = document.getElementById("dashboardUserCategories");
         const goal = document.getElementById("dashboardUserGoal");
         const publish = document.getElementById("dashboardUserPublish");
-        if (cats) cats.textContent = "로그인 후 관심 카테고리를 설정하면 대시보드 추천 순서가 개인화됩니다.";
+        if (cats) cats.textContent = "카테고리 필터와 자동 수집 조건을 기준으로 추천 순서가 정리됩니다.";
         if (goal) goal.textContent = "애드센스 승인용, 수익형 블로그, 카드뉴스 운영 등 목적별 추천을 제공합니다.";
         if (publish) publish.textContent = "워드프레스, 텔레그램, 수동 복사 운영 방식에 맞춰 버튼과 초안 형식이 최적화됩니다.";
         return;
