@@ -27,6 +27,18 @@ on:
         description: "최근 자료 기준 시간. 기본 24=최근 24시간"
         required: false
         default: "24"
+      auto_fallback:
+        description: "후보/근거가 부족하면 전체 카테고리 → 48시간으로 자동 확장"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      fallback_lookback_hours:
+        description: "자동 확장 시 최종 시간 범위. 기본 48시간"
+        required: false
+        default: "48"
       include_seed_keywords:
         description: "최근 트렌드가 부족할 때 seed 키워드까지 포함"
         required: false
@@ -105,6 +117,8 @@ jobs:
           ITEM_LIST_ONLY: ${{ inputs.item_list_only || 'true' }}
           NEWS_LINKS_PER_TOPIC: ${{ inputs.news_links_per_topic || '5' }}
           LOOKBACK_HOURS: ${{ inputs.lookback_hours || '24' }}
+          AUTO_FALLBACK: ${{ inputs.auto_fallback || 'true' }}
+          FALLBACK_LOOKBACK_HOURS: ${{ inputs.fallback_lookback_hours || '48' }}
           INCLUDE_SEED_KEYWORDS: ${{ inputs.include_seed_keywords || 'false' }}
           HOT_ISSUE_COUNT: ${{ inputs.hot_issue_count || '10' }}
           CARD_NEWS_COUNT: ${{ inputs.card_news_count || '3' }}
