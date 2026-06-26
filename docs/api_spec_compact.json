@@ -1,0 +1,51 @@
+{
+  "health": "GET /health",
+  "dashboard": [
+    "GET /api/dashboard/summary"
+  ],
+  "profile": [
+    "GET /api/profile",
+    "PATCH /api/profile"
+  ],
+  "keywords": [
+    "GET /api/keywords",
+    "POST /api/keywords/collect",
+    "POST /api/keywords/{keyword_id}/convert"
+  ],
+  "issues": [
+    "GET /api/issues/top"
+  ],
+  "evidence": [
+    "GET /api/evidence",
+    "POST /api/evidence/refresh"
+  ],
+  "sns": [
+    "GET /api/sns/trends",
+    "POST /api/sns/collect",
+    "POST /api/sns/trends/{trend_id}/convert"
+  ],
+  "economic_events": [
+    "GET /api/economic-events",
+    "POST /api/economic-events",
+    "PATCH /api/economic-events/{event_id}",
+    "POST /api/economic-events/{event_id}/convert"
+  ],
+  "content": [
+    "GET /api/content/ideas",
+    "POST /api/content/articles/generate",
+    "POST /api/content/cardnews/generate",
+    "POST /api/content/seo/check"
+  ],
+  "publish": [
+    "GET /api/publish/calendar",
+    "POST /api/publish/calendar",
+    "POST /api/publish/wordpress",
+    "POST /api/publish/telegram"
+  ],
+  "logs": [
+    "GET /api/logs"
+  ],
+  "support": [
+    "POST /api/support"
+  ]
+}
