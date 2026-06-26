@@ -7,6 +7,10 @@ on:
         description: "선택 주제. 쉼표 또는 줄바꿈으로 구분. 비우면 트렌드 키워드 자동 수집"
         required: false
         default: ""
+      category_filter:
+        description: "카테고리 필터. 기본 finance=경제·금융/증권/부동산/정책지원, all=전체, 또는 economy_finance,stock_investment 직접 입력"
+        required: false
+        default: "finance"
       item_list_only:
         description: "글 초안 생성 없이 작성 후보 + 관련 기사 링크만 텔레그램 전송"
         required: false
@@ -19,6 +23,18 @@ on:
         description: "주제별 관련 신문 기사 링크 수"
         required: false
         default: "5"
+      hot_issue_count:
+        description: "오늘의 핫이슈에 보여줄 항목 수"
+        required: false
+        default: "10"
+      card_news_count:
+        description: "오늘의 카드뉴스 추천 항목 수"
+        required: false
+        default: "3"
+      article_count:
+        description: "오늘의 작성글 추천 항목 수"
+        required: false
+        default: "3"
       telegram_only:
         description: "item_list_only=false일 때 WordPress 업로드 없이 텔레그램으로만 글 초안 전송"
         required: false
@@ -73,14 +89,18 @@ jobs:
           SITE_DESCRIPTION: ${{ vars.SITE_DESCRIPTION }}
           GOOGLE_TRENDS_GEO: KR
           SELECTED_TOPICS: ${{ inputs.topics || '' }}
+          CATEGORY_FILTER: ${{ inputs.category_filter || 'finance' }}
           ITEM_LIST_ONLY: ${{ inputs.item_list_only || 'true' }}
           NEWS_LINKS_PER_TOPIC: ${{ inputs.news_links_per_topic || '5' }}
+          HOT_ISSUE_COUNT: ${{ inputs.hot_issue_count || '10' }}
+          CARD_NEWS_COUNT: ${{ inputs.card_news_count || '3' }}
+          ARTICLE_COUNT: ${{ inputs.article_count || '3' }}
           TELEGRAM_ONLY: ${{ inputs.telegram_only || 'false' }}
           SEND_ARTICLES_TO_TELEGRAM: ${{ inputs.send_articles_to_telegram || 'false' }}
           SEND_ARTICLE_ON_WP_FAIL: false
           # true로 바꾸면 iPhone, GPT 같은 영어 키워드도 허용합니다.
           ALLOW_ENGLISH_KEYWORDS: false
-        run: python main.py --max-keywords 30 --max-posts 10
+        run: python main.py --max-keywords 30 --max-posts 10 --category-filter "${{ inputs.category_filter || 'finance' }}"
 
       - name: Upload reports
         if: always()
