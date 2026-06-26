@@ -11,6 +11,26 @@ on:
         description: "카테고리 필터. 기본 finance=경제·금융/증권/부동산/정책지원, all=전체, 또는 economy_finance,stock_investment 직접 입력"
         required: false
         default: "finance"
+      news_provider:
+        description: "근거 기사 출처. naver_first=네이버 우선, google=구글뉴스만, mixed=네이버+구글"
+        required: false
+        default: "naver_first"
+      use_naver_news_candidates:
+        description: "네이버 뉴스 최신 제목을 후보 아이템으로 보강"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      use_naver_datalab:
+        description: "네이버 DataLab 상대 검색지수로 순위 보정"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
       item_list_only:
         description: "글 초안 생성 없이 작성 후보 + 관련 기사 링크만 텔레그램 전송"
         required: false
@@ -103,6 +123,11 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          NEWS_PROVIDER: ${{ inputs.news_provider || 'naver_first' }}
+          USE_NAVER_NEWS_CANDIDATES: ${{ inputs.use_naver_news_candidates || 'true' }}
+          USE_NAVER_DATALAB: ${{ inputs.use_naver_datalab || 'true' }}
           WP_SITE_URL: ${{ secrets.WP_SITE_URL }}
           WP_API_URL: ${{ secrets.WP_API_URL }}
           WP_USERNAME: ${{ secrets.WP_USERNAME }}
