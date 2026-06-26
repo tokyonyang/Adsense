@@ -13,6 +13,7 @@ from trend_sources import collect_keywords
 from content_generator import generate_article
 from wp_publisher import create_wp_post
 from telegram_notify import send_telegram, send_telegram_long, html_escape
+from news_sources import fetch_related_news
 
 
 def _env_true(name: str, default: str = "false") -> bool:
@@ -79,6 +80,84 @@ def _keyword_dataframe_from_topics(topics: list[str]) -> pd.DataFrame:
     return pd.DataFrame([{"keyword": topic, "source": "manual"} for topic in topics])
 
 
+def _safe_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except Exception:
+        return default
+
+
+def _build_item_angle(keyword: str) -> str:
+    """글을 바로 작성하지 않고, 사람이 판단하기 좋은 작성 방향만 짧게 제안합니다."""
+    k = str(keyword or "")
+    if any(word in k for word in ["지원금", "신청", "환급", "보조금"]):
+        return "대상·신청기간·필요서류·주의사항 중심의 실용형 정리"
+    if any(word in k for word in ["전기요금", "가스요금", "난방비", "절약", "요금"]):
+        return "가정에서 바로 적용 가능한 절약 방법과 요금제 확인 포인트"
+    if any(word in k for word in ["대학", "입시", "모집", "수능", "교육"]):
+        return "일정·대상·변경사항·체크리스트 중심의 정보형 글"
+    if any(word in k for word in ["장마", "폭염", "태풍", "날씨", "폭우"]):
+        return "대비 체크리스트·피해 예방·생활 안전 수칙 중심"
+    if any(word in k for word in ["부동산", "청약", "주택", "전세", "월세"]):
+        return "자격·일정·비용·리스크를 분리한 생활경제형 정리"
+    return "이슈 배경 → 왜 관심이 커졌는지 → 독자가 확인할 것 순서로 정리"
+
+
+def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: int, geo: str) -> list[dict]:
+    items = []
+    for _, row in keywords.head(max_items).iterrows():
+        keyword = str(row.get("keyword", "")).strip()
+        if not keyword:
+            continue
+        news = fetch_related_news(keyword, limit=links_per_topic, geo=geo)
+        items.append({
+            "keyword": keyword,
+            "source": str(row.get("source", "")),
+            "approx_traffic": int(row.get("approx_traffic") or 0) if str(row.get("approx_traffic", "")).isdigit() else row.get("approx_traffic", 0),
+            "angle": _build_item_angle(keyword),
+            "news": news,
+        })
+    return items
+
+
+def _ideas_to_telegram_text(items: list[dict]) -> str:
+    lines = [
+        "🧭 AdSense 작성 후보 아이템 리포트",
+        "글 초안은 생성하지 않았습니다. 선별용 주제와 관련 기사 링크만 정리했습니다.",
+    ]
+    if not items:
+        lines.append("\n수집된 작성 후보가 없습니다. 트렌드 수집 또는 선택 주제를 확인해주세요.")
+        return "\n".join(lines)
+
+    for i, item in enumerate(items, 1):
+        keyword = item.get("keyword") or ""
+        angle = item.get("angle") or ""
+        source = item.get("source") or ""
+        lines.append(f"\n{i}. {keyword}")
+        if source:
+            lines.append(f"수집경로: {source}")
+        if angle:
+            lines.append(f"작성각도: {angle}")
+        news = item.get("news") or []
+        if news:
+            lines.append("관련 기사:")
+            for n, article in enumerate(news, 1):
+                title = article.get("title") or "기사 링크"
+                media = article.get("source") or ""
+                published = article.get("published") or ""
+                url = article.get("url") or ""
+                meta = " · ".join(x for x in [media, published] if x)
+                if meta:
+                    lines.append(f"  {n}) {title} ({meta})")
+                else:
+                    lines.append(f"  {n}) {title}")
+                if url:
+                    lines.append(f"     {url}")
+        else:
+            lines.append("관련 기사: 최근 7일 기준 RSS에서 확인된 링크가 없습니다.")
+    return "\n".join(lines)
+
+
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser()
@@ -88,6 +167,7 @@ def main():
     parser.add_argument("--topics", default=os.environ.get("SELECTED_TOPICS", ""))
     parser.add_argument("--no-wordpress", action="store_true")
     parser.add_argument("--send-articles-to-telegram", action="store_true")
+    parser.add_argument("--list-only", action="store_true", help="글 초안 생성 없이 작성 후보와 관련 기사 링크만 텔레그램으로 전송")
     args = parser.parse_args()
 
     # 운영 기본값: GitHub Actions 워크플로우가 아직 예전 값(10/3)을 넘기더라도
@@ -103,6 +183,9 @@ def main():
         or args.send_articles_to_telegram
         or telegram_only
     )
+    # 기본 운영은 "후보 리스트만 전송"입니다. 글 초안 생성/워드프레스 업로드는 필요할 때만 끕니다.
+    list_only = _env_true("ITEM_LIST_ONLY", "true") or args.list_only
+    links_per_topic = max(1, _safe_int_env("NEWS_LINKS_PER_TOPIC", 5))
 
     topics = _parse_topics(args.topics)
 
@@ -115,6 +198,26 @@ def main():
         keywords = collect_keywords(args.geo, args.max_keywords)
 
     keywords.to_csv(f"reports/trend_keywords_{today}.csv", index=False, encoding="utf-8-sig")
+
+    if list_only:
+        items = _build_idea_digest(keywords, args.max_posts, links_per_topic, args.geo)
+        Path(f"reports/idea_items_{today}.json").write_text(
+            json.dumps(items, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        flat_rows = []
+        for item in items:
+            news = item.get("news") or []
+            flat_rows.append({
+                "keyword": item.get("keyword", ""),
+                "source": item.get("source", ""),
+                "angle": item.get("angle", ""),
+                "news_count": len(news),
+                "news_links": " | ".join(n.get("url", "") for n in news),
+            })
+        pd.DataFrame(flat_rows).to_csv(f"reports/idea_items_{today}.csv", index=False, encoding="utf-8-sig")
+        send_telegram_long(_ideas_to_telegram_text(items), parse_mode=None)
+        return
 
     results = []
     for _, row in keywords.head(args.max_posts).iterrows():
