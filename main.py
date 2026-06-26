@@ -709,29 +709,36 @@ def _select_article_items(items: list[dict], count: int) -> list[dict]:
 
 
 def _news_links_html(news: list[dict], limit: int | None = None) -> str:
-    """뉴스 링크를 링크1~링크N 라벨로 변환합니다."""
+    """근거자료 목록을 텔레그램에서 보기 좋게 변환합니다.
+
+    변경 사항:
+    - '링크1~링크N' 라벨을 표시하지 않습니다.
+    - 실제 URL이 있으면 기사 제목 자체를 클릭 링크로 만듭니다.
+    - URL이 없거나 잘못된 값이면 링크 없이 기사 제목만 표시합니다.
+    """
     if not news:
-        return "지정 기간 기준 RSS에서 확인된 링크가 없습니다."
+        return "  - 확인 가능한 근거자료가 없습니다."
 
     parts = []
     selected = news[:limit] if limit else news
     for n, article in enumerate(selected, 1):
         title = html_escape(article.get("title") or "기사 제목 없음")
-        media = html_escape(article.get("source") or "")
-        published = html_escape(article.get("published") or "")
-        url = str(article.get("url") or "").strip()
-        meta = " · ".join(x for x in [media, published] if x)
-        link_label = f"링크{n}"
-        if url.startswith(("http://", "https://")):
-            link_text = f'<a href="{_html_attr(url)}">{link_label}</a>'
-        else:
-            link_text = link_label
-        if meta:
-            parts.append(f"  {n}) {title} ({meta}) / {link_text}")
-        else:
-            parts.append(f"  {n}) {title} / {link_text}")
-    return "\n".join(parts)
+        media = html_escape(article.get("source") or article.get("source_name") or article.get("press") or "")
+        published = html_escape(article.get("published") or article.get("published_at") or article.get("pubDate") or "")
+        url = str(article.get("url") or article.get("link") or article.get("originallink") or "").strip()
 
+        meta = " · ".join(x for x in [media, published] if x)
+
+        if url.startswith(("http://", "https://")):
+            title_text = f'<a href="{_html_attr(url)}">{title}</a>'
+        else:
+            title_text = title
+
+        if meta:
+            parts.append(f"  {n}) {title_text} ({meta})")
+        else:
+            parts.append(f"  {n}) {title_text}")
+    return "\n".join(parts)
 
 
 def _allowed_label(allowed_categories: list[str]) -> str:
@@ -754,33 +761,24 @@ def _daily_digest_to_telegram_text(
 ) -> str:
     """최종 운영용 텔레그램 리포트입니다.
 
-    구성:
-    1) 오늘의 핫이슈: 전체 후보를 조회수 많은 순으로 정리
-    2) 오늘의 카드뉴스: 카드뉴스 제작 추천 항목
-    3) 오늘의 작성글: 블로그/워드프레스 작성 추천 항목
+    공개 리포트에서는 내부 로그성 정보를 숨깁니다.
+    숨김 처리:
+    - 관심도
+    - Google 조회수
+    - 네이버 신호
+    - DataLab
+    - 수집경로
+    - 작성각도
+    - 자동 대체 검색 로그
+
+    핫이슈 제목 바로 아래에 근거자료가 표시됩니다.
     """
-    evidence_items_count = sum(1 for item in items if len(item.get("news") or []) > 0)
     lines = [
-        "🔥 <b>오늘의 핫이슈 · 카드뉴스 · 작성글 후보</b>",
-        f"분야 필터: <b>{html_escape(_allowed_label(allowed_categories))}</b>",
-        f"수집 기준: <b>최근 {int(lookback_hours)}시간 이내</b>",
-        "정렬 기준: <b>종합 관심도 순</b> = Google Trends 조회수 + 네이버 뉴스량 + 네이버 DataLab 상대지수",
-        f"근거자료 포함: <b>{evidence_items_count}/{len(items)}</b>개 항목",
-        "근거자료는 <b>네이버 뉴스 우선</b>, 부족하면 Google News로 보완합니다.",
-        "기사 URL은 길게 노출하지 않고 <b>링크1~링크5</b> 라벨로 표시합니다.",
+        "🔥 <b>오늘의 핫이슈 TOP 10</b>",
     ]
 
-    if fallback_info:
-        lines.append("\n🔎 <b>자동 대체 검색 로그</b>")
-        for idx, stage in enumerate(fallback_info, 1):
-            label = html_escape(stage.get("label", ""))
-            item_count = int(stage.get("item_count", 0) or 0)
-            evidence_count = int(stage.get("evidence_count", 0) or 0)
-            used = " → <b>사용</b>" if stage.get("used") else ""
-            lines.append(f"{idx}) {label}: 후보 {item_count}개 / 근거 포함 {evidence_count}개{used}")
-
     if not items:
-        lines.append("\n수집된 작성 후보가 없습니다. 카테고리 필터 또는 선택 주제를 확인해주세요.")
+        lines.append("\n오늘 표시할 핫이슈가 없습니다.")
         return "\n".join(lines)
 
     ranked_items = sorted(items, key=_rank_sort_key, reverse=True)
@@ -788,25 +786,14 @@ def _daily_digest_to_telegram_text(
     card_items = _select_card_news_items(hot_items, card_news_count)
     article_items = _select_article_items(hot_items, article_count)
 
-    lines.append("\n🔥 <b>오늘의 핫이슈 TOP {}</b>".format(len(hot_items)))
+    lines = [
+        f"🔥 <b>오늘의 핫이슈 TOP {len(hot_items)}</b>",
+    ]
+
     for idx, item in enumerate(hot_items, 1):
         keyword = html_escape(item.get("keyword") or "")
         category = html_escape(item.get("category_label") or "")
-        traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
-        interest = html_escape(item.get("interest_label") or _interest_label(item.get("composite_score")))
-        naver_news_count = _to_int(item.get("naver_news_count", 0))
-        datalab_score = float(item.get("naver_datalab_score", 0) or 0)
-        source = html_escape(item.get("source") or "")
-        evidence = html_escape(item.get("evidence_strength") or "")
-        angle = html_escape(item.get("angle") or "")
         lines.append(f"\n<b>{idx}. [{category}] {keyword}</b>")
-        lines.append(f"관심도: <b>{interest}</b> / Google 조회수: <b>{traffic}</b> / 근거강도: {evidence}")
-        if naver_news_count or datalab_score:
-            lines.append(f"네이버 신호: 최근뉴스 {naver_news_count}건 / DataLab {datalab_score:.1f}")
-        if source:
-            lines.append(f"수집경로: {source}")
-        if angle:
-            lines.append(f"작성각도: {angle}")
         lines.append("근거자료:")
         lines.append(_news_links_html(item.get("news") or []))
 
@@ -816,11 +803,10 @@ def _daily_digest_to_telegram_text(
     for idx, item in enumerate(card_items, 1):
         keyword = html_escape(item.get("keyword") or "")
         ref_rank = hot_items.index(item) + 1 if item in hot_items else item.get("rank", "-")
-        traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
         angle = html_escape(item.get("card_news_angle") or "")
         lines.append(f"\n<b>{idx}. #{ref_rank} {keyword}</b>")
-        lines.append(f"선정이유: 관심도 {html_escape(item.get('interest_label') or _interest_label(item.get('composite_score')))}, Google 조회수 {traffic}, 기사근거 {len(item.get('news') or [])}개")
-        lines.append(f"구성방향: {angle}")
+        if angle:
+            lines.append(f"구성방향: {angle}")
 
     lines.append("\n✍️ <b>오늘의 작성글 추천</b>")
     if not article_items:
@@ -828,18 +814,15 @@ def _daily_digest_to_telegram_text(
     for idx, item in enumerate(article_items, 1):
         keyword = html_escape(item.get("keyword") or "")
         ref_rank = hot_items.index(item) + 1 if item in hot_items else item.get("rank", "-")
-        traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
         angle = html_escape(item.get("article_angle") or "")
         lines.append(f"\n<b>{idx}. #{ref_rank} {keyword}</b>")
-        lines.append(f"선정이유: 검색 유입 가능성 + 관심도 {html_escape(item.get('interest_label') or _interest_label(item.get('composite_score')))} + 근거 기사 {len(item.get('news') or [])}개")
-        lines.append(f"글방향: {angle}")
+        if angle:
+            lines.append(f"글방향: {angle}")
 
-    lines.append("\n📌 <b>운영 메모</b>")
-    lines.append(f"Google Trends approx traffic은 조회수 참고값으로 사용하고, 네이버 뉴스량/DataLab 상대지수로 순위를 보정합니다.")
-    lines.append(f"근거자료는 네이버 뉴스 검색 API를 우선 사용하고 부족하면 Google News RSS 최근 {int(lookback_hours)}시간 기준으로 보완합니다.")
-    lines.append("seed 키워드는 기본 제외됩니다. 필요할 때만 include_seed_keywords=true로 켜세요.")
+    lines.append("\n📌 <b>확인 메모</b>")
+    lines.append("각 근거자료는 원문 확인용입니다.")
+    lines.append("금융·정책 이슈는 발행 전 공식 자료를 한 번 더 확인하세요.")
     return "\n".join(lines)
-
 
 
 def _ideas_to_telegram_text(items: list[dict], allowed_categories: list[str]) -> str:
