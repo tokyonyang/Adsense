@@ -2,6 +2,27 @@ name: daily-adsense-seo
 
 on:
   workflow_dispatch:
+    inputs:
+      topics:
+        description: "선택 작성 주제. 쉼표 또는 줄바꿈으로 구분. 비우면 트렌드 키워드 자동 수집"
+        required: false
+        default: ""
+      telegram_only:
+        description: "WordPress 업로드 없이 텔레그램으로만 글 초안 전송"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      send_articles_to_telegram:
+        description: "생성된 글 본문을 텔레그램으로 별도 전송"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     # 매일 08:30 KST = 23:30 UTC
     - cron: "30 23 * * *"
@@ -31,6 +52,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
           WP_SITE_URL: ${{ secrets.WP_SITE_URL }}
+          WP_API_URL: ${{ secrets.WP_API_URL }}
           WP_USERNAME: ${{ secrets.WP_USERNAME }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
           WP_DEFAULT_STATUS: draft
@@ -38,7 +60,12 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SITE_DESCRIPTION: ${{ vars.SITE_DESCRIPTION }}
           GOOGLE_TRENDS_GEO: KR
-          BLOCKED_KEYWORDS: "도박,불법,마약"
+          SELECTED_TOPICS: ${{ inputs.topics || '' }}
+          TELEGRAM_ONLY: ${{ inputs.telegram_only || 'false' }}
+          SEND_ARTICLES_TO_TELEGRAM: ${{ inputs.send_articles_to_telegram || 'false' }}
+          SEND_ARTICLE_ON_WP_FAIL: true
+          # true로 바꾸면 iPhone, GPT 같은 영어 키워드도 허용합니다.
+          ALLOW_ENGLISH_KEYWORDS: false
         run: python main.py --max-keywords 30 --max-posts 10
 
       - name: Upload reports
