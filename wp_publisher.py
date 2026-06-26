@@ -63,6 +63,16 @@ def _response_preview(text: str, limit: int = 220) -> str:
     return text[:limit]
 
 
+def _friendly_auth_error(message: str) -> str:
+    return (
+        "워드프레스 글 작성 권한이 없습니다. "
+        "WP_USERNAME 사용자의 역할이 관리자/편집자/글쓴이인지 확인하고, "
+        "해당 사용자에서 새 Application Password를 발급해 WP_APP_PASSWORD에 넣어주세요. "
+        "보안 플러그인이 REST API 또는 Application Password를 막고 있어도 같은 오류가 날 수 있습니다. "
+        f"원문: {message}"
+    )
+
+
 def _raise_wp_error(res: requests.Response, endpoint: str) -> None:
     try:
         data = res.json()
@@ -72,7 +82,10 @@ def _raise_wp_error(res: requests.Response, endpoint: str) -> None:
     if isinstance(data, dict):
         code = data.get("code") or "unknown"
         message = data.get("message") or res.reason or ""
-        detail = f"{code}: {message}"
+        if code == "rest_cannot_create" or res.status_code in {401, 403}:
+            detail = _friendly_auth_error(message)
+        else:
+            detail = f"{code}: {message}"
     else:
         preview = _response_preview(res.text)
         if res.status_code == 404:
@@ -83,7 +96,7 @@ def _raise_wp_error(res: requests.Response, endpoint: str) -> None:
             if preview:
                 detail += f" / 응답 요약: {preview}"
         elif res.status_code in {401, 403}:
-            detail = "워드프레스 인증에 실패했습니다. WP_USERNAME과 WP_APP_PASSWORD를 확인하세요."
+            detail = _friendly_auth_error(preview or res.reason or "인증 실패")
         else:
             detail = preview or res.reason or "응답 내용을 확인할 수 없습니다."
 
