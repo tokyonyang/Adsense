@@ -96,8 +96,10 @@ on:
           - "false"
           - "true"
   schedule:
-    # 매일 08:30 KST = 23:30 UTC
-    - cron: "30 23 * * *"
+    # 하루 4회 자동 실행 (GitHub Actions cron은 UTC 기준)
+    # 06:00 KST = 21:00 UTC(전일), 11:00 KST = 02:00 UTC
+    # 15:00 KST = 06:00 UTC, 19:00 KST = 10:00 UTC
+    - cron: "0 2,6,10,21 * * *"
 
 permissions:
   contents: read
