@@ -8,6 +8,11 @@
 - Gemini 응답이 ```json 코드블록으로 와도 JSON만 추출하도록 보강했습니다.
 - `日本 対 スウェーデン`, `cuaca besok` 같은 비한국어 트렌드 키워드가 섞이지 않도록 기본 필터를 추가했습니다.
 - 텔레그램 HTML 파싱 오류를 줄이기 위해 제목/키워드/오류 메시지를 escape 처리했습니다.
+- 기본 실행값을 키워드 최대 30개 수집, 포스팅 최대 10개 생성으로 변경했습니다.
+- BLOCKED_KEYWORDS 환경변수를 제거하고, 코드에서도 차단 키워드 필터를 사용하지 않도록 변경했습니다.
+- WordPress 404 오류가 HTML 원문으로 길게 전송되지 않도록 오류 메시지를 정리했습니다.
+- WP_SITE_URL에 /wp-admin 또는 /wp-json 경로가 들어가도 워드프레스 홈 주소로 보정하도록 개선했습니다.
+- 필요 시 WP_API_URL로 워드프레스 REST API 주소를 직접 지정할 수 있게 했습니다.
 
 ## 기본 원칙
 - 기본값은 자동 게시가 아니라 WordPress `draft` 생성입니다.
@@ -19,19 +24,20 @@
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
-python main.py --max-keywords 10 --max-posts 3
+python main.py --max-keywords 30 --max-posts 10
 ```
 
 WordPress 업로드 없이 로컬 리포트와 텔레그램 테스트만 하려면:
 
 ```bash
-python main.py --max-keywords 10 --max-posts 3 --no-wordpress
+python main.py --max-keywords 30 --max-posts 10 --no-wordpress
 ```
 
 ## GitHub Secrets
 ```text
 GEMINI_API_KEY
 WP_SITE_URL
+WP_API_URL  # 선택 사항, WP REST API 주소를 직접 지정할 때만 사용
 WP_USERNAME
 WP_APP_PASSWORD
 TELEGRAM_BOT_TOKEN
@@ -63,7 +69,7 @@ ALLOW_ENGLISH_KEYWORDS=true
 
 ## 운영 추천
 1. 매일 오전 트렌드 후보 수집
-2. 민감/위험 키워드 제외
+2. 한국어 키워드 중심으로 정리
 3. 키워드별 글 초안 생성
 4. WordPress draft 업로드
 5. 텔레그램으로 초안 링크 알림

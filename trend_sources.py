@@ -4,7 +4,7 @@ import html
 import feedparser
 import pandas as pd
 from datetime import datetime, timezone
-from seo_utils import clean_text, score_keyword, is_blocked_keyword, is_valid_korean_keyword
+from seo_utils import clean_text, score_keyword, is_valid_korean_keyword
 
 GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo={geo}"
 
@@ -54,7 +54,7 @@ def load_seed_keywords(path: str = "data/seed_keywords.csv") -> pd.DataFrame:
     return df[["keyword", "source", "approx_traffic", "collected_at"]]
 
 
-def collect_keywords(geo: str = "KR", limit: int = 30, blocked_keywords: str = "") -> pd.DataFrame:
+def collect_keywords(geo: str = "KR", limit: int = 30) -> pd.DataFrame:
     allow_english = os.environ.get("ALLOW_ENGLISH_KEYWORDS", "false").lower() in {"1", "true", "yes", "y"}
 
     df = pd.concat([fetch_google_trends_rss(geo, limit), load_seed_keywords()], ignore_index=True)
@@ -63,7 +63,6 @@ def collect_keywords(geo: str = "KR", limit: int = 30, blocked_keywords: str = "
 
     df["keyword"] = df["keyword"].map(clean_text)
     df = df[df["keyword"] != ""].drop_duplicates("keyword")
-    df = df[~df["keyword"].map(lambda x: is_blocked_keyword(x, blocked_keywords))]
     df = df[df["keyword"].map(lambda x: is_valid_korean_keyword(x, allow_english=allow_english))]
 
     if df.empty:

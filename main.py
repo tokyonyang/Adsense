@@ -11,24 +11,24 @@ from wp_publisher import create_wp_post
 from telegram_notify import send_telegram, html_escape
 
 
-def _short_error(exc: Exception, max_len: int = 160) -> str:
+def _short_error(exc: Exception, max_len: int = 220) -> str:
     text = str(exc).replace("\\n", " ").replace("\n", " ").strip()
-    return text[:max_len]
+    return text[:max_len] + ("..." if len(text) > max_len else "")
 
 
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser()
     parser.add_argument("--geo", default=os.environ.get("GOOGLE_TRENDS_GEO", "KR"))
-    parser.add_argument("--max-keywords", type=int, default=int(os.environ.get("MAX_KEYWORDS", "10")))
-    parser.add_argument("--max-posts", type=int, default=int(os.environ.get("MAX_POSTS_PER_RUN", "3")))
+    parser.add_argument("--max-keywords", type=int, default=int(os.environ.get("MAX_KEYWORDS", "30")))
+    parser.add_argument("--max-posts", type=int, default=int(os.environ.get("MAX_POSTS_PER_RUN", "10")))
     parser.add_argument("--no-wordpress", action="store_true")
     args = parser.parse_args()
 
     Path("reports").mkdir(exist_ok=True)
     today = datetime.now().strftime("%Y%m%d")
 
-    keywords = collect_keywords(args.geo, args.max_keywords, os.environ.get("BLOCKED_KEYWORDS", ""))
+    keywords = collect_keywords(args.geo, args.max_keywords)
     keywords.to_csv(f"reports/trend_keywords_{today}.csv", index=False, encoding="utf-8-sig")
 
     results = []
