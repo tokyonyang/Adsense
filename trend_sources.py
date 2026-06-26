@@ -7,6 +7,11 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from seo_utils import clean_text, score_keyword, is_valid_korean_keyword
 
+try:
+    from naver_sources import collect_naver_news_candidates
+except Exception:
+    collect_naver_news_candidates = None
+
 GOOGLE_TRENDS_RSS = "https://trends.google.com/trending/rss?geo={geo}"
 
 
@@ -158,10 +163,24 @@ def collect_keywords(geo: str = "KR", limit: int = 30, lookback_hours: int = 24,
         include_seed_keywords = os.environ.get("INCLUDE_SEED_KEYWORDS", "false").lower() in {"1", "true", "yes", "y"}
 
     frames = [fetch_google_trends_rss(geo, limit, lookback_hours=lookback_hours)]
+
+    # 네이버 뉴스 검색 API가 설정된 경우, 한국 뉴스 기반 후보를 보강합니다.
+    # 네이버는 공식 API로 실시간 인기검색어 원본 순위를 제공하지 않으므로
+    # 최신 뉴스 제목을 후보 아이템으로 추가하고, 최종 순위는 main.py에서 네이버 신호로 보정합니다.
+    if collect_naver_news_candidates is not None:
+        try:
+            category_filter = os.environ.get("CATEGORY_FILTER", "finance")
+            frames.append(collect_naver_news_candidates(limit=limit, lookback_hours=lookback_hours, category_filter=category_filter))
+        except Exception as exc:
+            print(f"[WARN] Naver news candidates skipped: {exc}")
+
     # 최신 24시간 운영에서는 seed 키워드가 오래된 주제를 섞을 수 있으므로 기본 제외합니다.
     if include_seed_keywords:
         frames.append(load_seed_keywords())
 
+    frames = [f for f in frames if f is not None and not f.empty]
+    if not frames:
+        return pd.DataFrame(columns=["keyword", "source", "approx_traffic", "collected_at", "published_at", "age_hours"])
     df = pd.concat(frames, ignore_index=True)
     if df.empty:
         return df

@@ -17,6 +17,14 @@ from wp_publisher import create_wp_post
 from telegram_notify import send_telegram, send_telegram_long, html_escape
 from news_sources import fetch_related_news
 
+try:
+    from naver_sources import fetch_naver_datalab_score, fetch_naver_news_signal, naver_enabled
+except Exception:
+    fetch_naver_datalab_score = None
+    fetch_naver_news_signal = None
+    def naver_enabled():
+        return False
+
 
 # -----------------------------------------------------------------------------
 # 카테고리 설정
@@ -315,13 +323,43 @@ def _traffic_label(value) -> str:
     return f"{n:,}+"
 
 
+
+
+def _interest_label(value) -> str:
+    n = _to_int(value)
+    if n <= 0:
+        return "관심도 산정 중"
+    return f"{n:,}점"
+
+
+def _calculate_composite_score(traffic: int, naver_news_count: int, naver_datalab_score: float, base_score: int = 0) -> int:
+    """핫이슈 정렬용 종합 관심도 점수입니다.
+
+    - traffic: Google Trends approx traffic. 절대 검색량이 아니라 Google RSS가 제공하는 대략값입니다.
+    - naver_news_count: 최근 lookback_hours 안에 확인된 네이버 뉴스 기사 수.
+    - naver_datalab_score: 네이버 데이터랩 상대 검색지수. 절대 조회수가 아니라 0~100 상대값입니다.
+    """
+    traffic_component = min(_to_int(traffic), 1_000_000)
+    news_component = min(_to_int(naver_news_count), 50) * 8_000
+    datalab_component = int(min(float(naver_datalab_score or 0), 100.0) * 5_000)
+    base_component = min(_to_int(base_score), 500)
+    return int(traffic_component + news_component + datalab_component + base_component)
+
 def _rank_sort_key(row_or_item):
-    """조회수 우선, 근거 기사 수, 내부 점수 순으로 정렬하기 위한 key입니다."""
+    """종합 관심도 우선 정렬 key입니다.
+
+    네이버 Open API는 기사/검색어의 절대 조회수를 제공하지 않으므로,
+    Google Trends approx traffic + 네이버 뉴스량 + 네이버 데이터랩 상대지수를 합산한
+    composite_score를 우선 사용합니다.
+    """
     getter = row_or_item.get
+    composite = _to_int(getter("composite_score", 0))
     traffic = _to_int(getter("approx_traffic_int", getter("approx_traffic", 0)))
+    datalab = float(getter("naver_datalab_score", 0) or 0)
+    naver_news_count = _to_int(getter("naver_news_count", 0))
     news_count = len(getter("news", []) or [])
     score = _to_int(getter("score", 0))
-    return (traffic, news_count, score)
+    return (composite, traffic, datalab, naver_news_count, news_count, score)
 
 
 
@@ -412,6 +450,32 @@ def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: 
             lookback_hours=lookback_hours,
         )
         approx_traffic = _to_int(row.get("approx_traffic_int", row.get("approx_traffic", 0)))
+        base_score = _to_int(row.get("score", 0))
+
+        naver_news_count = 0
+        naver_news_latest_at = ""
+        if fetch_naver_news_signal is not None and naver_enabled():
+            try:
+                signal = fetch_naver_news_signal(keyword, lookback_hours=lookback_hours, display=30)
+                naver_news_count = _to_int(signal.get("naver_news_count", 0))
+                naver_news_latest_at = str(signal.get("naver_news_latest_at", ""))
+            except Exception as exc:
+                print(f"[WARN] Naver news signal skipped for {keyword}: {exc}")
+
+        naver_datalab_score = 0.0
+        if fetch_naver_datalab_score is not None and naver_enabled():
+            try:
+                naver_datalab_score = float(fetch_naver_datalab_score(keyword, lookback_hours=lookback_hours) or 0)
+            except Exception as exc:
+                print(f"[WARN] Naver DataLab signal skipped for {keyword}: {exc}")
+
+        composite_score = _calculate_composite_score(
+            approx_traffic,
+            naver_news_count or len([n for n in news if str(n.get("provider", "")).startswith("naver")]),
+            naver_datalab_score,
+            base_score,
+        )
+
         item = {
             "rank": rank,
             "keyword": keyword,
@@ -420,7 +484,12 @@ def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: 
             "age_hours": row.get("age_hours", ""),
             "approx_traffic": approx_traffic,
             "traffic_label": _traffic_label(approx_traffic),
-            "score": _to_int(row.get("score", 0)),
+            "score": base_score,
+            "composite_score": composite_score,
+            "interest_label": _interest_label(composite_score),
+            "naver_news_count": naver_news_count,
+            "naver_news_latest_at": naver_news_latest_at,
+            "naver_datalab_score": naver_datalab_score,
             "category_id": category_id,
             "category_label": _category_short_label(category_id),
             "angle": _build_item_angle(keyword, category_id),
@@ -609,6 +678,7 @@ def _select_card_news_items(items: list[dict], count: int) -> list[dict]:
     ranked = sorted(
         items,
         key=lambda item: (
+            _to_int(item.get("composite_score")),
             _to_int(item.get("approx_traffic")),
             1 if item.get("category_id") in preferred else 0,
             len(item.get("news") or []),
@@ -627,6 +697,7 @@ def _select_article_items(items: list[dict], count: int) -> list[dict]:
         items,
         key=lambda item: (
             1 if item.get("category_id") in practical_categories else 0,
+            _to_int(item.get("composite_score")),
             _to_int(item.get("approx_traffic")),
             len(item.get("news") or []),
             _to_int(item.get("score")),
@@ -693,8 +764,9 @@ def _daily_digest_to_telegram_text(
         "🔥 <b>오늘의 핫이슈 · 카드뉴스 · 작성글 후보</b>",
         f"분야 필터: <b>{html_escape(_allowed_label(allowed_categories))}</b>",
         f"수집 기준: <b>최근 {int(lookback_hours)}시간 이내</b>",
-        "정렬 기준: <b>최근 조회수 많은 순</b> → 근거 기사 수 → 내부 점수",
+        "정렬 기준: <b>종합 관심도 순</b> = Google Trends 조회수 + 네이버 뉴스량 + 네이버 DataLab 상대지수",
         f"근거자료 포함: <b>{evidence_items_count}/{len(items)}</b>개 항목",
+        "근거자료는 <b>네이버 뉴스 우선</b>, 부족하면 Google News로 보완합니다.",
         "기사 URL은 길게 노출하지 않고 <b>링크1~링크5</b> 라벨로 표시합니다.",
     ]
 
@@ -721,11 +793,16 @@ def _daily_digest_to_telegram_text(
         keyword = html_escape(item.get("keyword") or "")
         category = html_escape(item.get("category_label") or "")
         traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
+        interest = html_escape(item.get("interest_label") or _interest_label(item.get("composite_score")))
+        naver_news_count = _to_int(item.get("naver_news_count", 0))
+        datalab_score = float(item.get("naver_datalab_score", 0) or 0)
         source = html_escape(item.get("source") or "")
         evidence = html_escape(item.get("evidence_strength") or "")
         angle = html_escape(item.get("angle") or "")
         lines.append(f"\n<b>{idx}. [{category}] {keyword}</b>")
-        lines.append(f"조회수: <b>{traffic}</b> / 근거강도: {evidence}")
+        lines.append(f"관심도: <b>{interest}</b> / Google 조회수: <b>{traffic}</b> / 근거강도: {evidence}")
+        if naver_news_count or datalab_score:
+            lines.append(f"네이버 신호: 최근뉴스 {naver_news_count}건 / DataLab {datalab_score:.1f}")
         if source:
             lines.append(f"수집경로: {source}")
         if angle:
@@ -742,7 +819,7 @@ def _daily_digest_to_telegram_text(
         traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
         angle = html_escape(item.get("card_news_angle") or "")
         lines.append(f"\n<b>{idx}. #{ref_rank} {keyword}</b>")
-        lines.append(f"선정이유: 조회수 {traffic}, 기사근거 {len(item.get('news') or [])}개")
+        lines.append(f"선정이유: 관심도 {html_escape(item.get('interest_label') or _interest_label(item.get('composite_score')))}, Google 조회수 {traffic}, 기사근거 {len(item.get('news') or [])}개")
         lines.append(f"구성방향: {angle}")
 
     lines.append("\n✍️ <b>오늘의 작성글 추천</b>")
@@ -754,12 +831,12 @@ def _daily_digest_to_telegram_text(
         traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
         angle = html_escape(item.get("article_angle") or "")
         lines.append(f"\n<b>{idx}. #{ref_rank} {keyword}</b>")
-        lines.append(f"선정이유: 검색 유입 가능성 + 조회수 {traffic} + 근거 기사 {len(item.get('news') or [])}개")
+        lines.append(f"선정이유: 검색 유입 가능성 + 관심도 {html_escape(item.get('interest_label') or _interest_label(item.get('composite_score')))} + 근거 기사 {len(item.get('news') or [])}개")
         lines.append(f"글방향: {angle}")
 
     lines.append("\n📌 <b>운영 메모</b>")
-    lines.append(f"조회수는 Google Trends RSS의 최근 {int(lookback_hours)}시간 기준 approx traffic을 우선 사용합니다.")
-    lines.append(f"근거자료는 Google News RSS 최근 {int(lookback_hours)}시간 기준으로 가져오며, 텔레그램에서는 링크 라벨만 노출됩니다.")
+    lines.append(f"Google Trends approx traffic은 조회수 참고값으로 사용하고, 네이버 뉴스량/DataLab 상대지수로 순위를 보정합니다.")
+    lines.append(f"근거자료는 네이버 뉴스 검색 API를 우선 사용하고 부족하면 Google News RSS 최근 {int(lookback_hours)}시간 기준으로 보완합니다.")
     lines.append("seed 키워드는 기본 제외됩니다. 필요할 때만 include_seed_keywords=true로 켜세요.")
     return "\n".join(lines)
 
@@ -861,6 +938,10 @@ def main():
                 "category": item.get("category_label", ""),
                 "approx_traffic": item.get("approx_traffic", 0),
                 "traffic_label": item.get("traffic_label", ""),
+                "composite_score": item.get("composite_score", 0),
+                "interest_label": item.get("interest_label", ""),
+                "naver_news_count": item.get("naver_news_count", 0),
+                "naver_datalab_score": item.get("naver_datalab_score", 0),
                 "source": item.get("source", ""),
                 "published_at": item.get("published_at", ""),
                 "age_hours": item.get("age_hours", ""),

@@ -1,4 +1,5 @@
 import html
+import os
 import math
 import re
 from datetime import datetime, timezone, timedelta
@@ -8,6 +9,11 @@ from urllib.parse import quote_plus
 import feedparser
 
 from seo_utils import clean_text
+
+try:
+    from naver_sources import fetch_naver_news
+except Exception:
+    fetch_naver_news = None
 
 
 GOOGLE_NEWS_SEARCH_RSS = "https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -59,18 +65,33 @@ def _age_hours(entry_dt: datetime | None) -> float | None:
     return max(0.0, (datetime.now(timezone.utc) - entry_dt).total_seconds() / 3600)
 
 
-def fetch_related_news(
+
+def _env_true(name: str, default: str = "false") -> bool:
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _dedupe_news(articles: list[dict], limit: int) -> list[dict]:
+    rows = []
+    seen = set()
+    for article in articles:
+        title = clean_text(article.get("title", ""))
+        url = clean_text(article.get("url", ""))
+        key = re.sub(r"\s+", " ", title.lower()) or url
+        if not title or not url or key in seen:
+            continue
+        seen.add(key)
+        rows.append(article)
+        if len(rows) >= limit:
+            break
+    return rows
+
+def _fetch_google_news(
     keyword: str,
     limit: int = 5,
     geo: str = "KR",
     category_hint: str = "",
     lookback_hours: int = 24,
 ) -> list[dict]:
-    """키워드와 관련된 한국어 뉴스 링크를 Google News RSS에서 가져옵니다.
-
-    기본값은 최근 24시간 이내 기사입니다. Google News 검색 연산자 `when:1d`를 사용하고,
-    RSS의 published 시간이 파싱되는 경우 로컬에서도 24시간 초과 기사를 걸러냅니다.
-    """
     keyword = clean_text(keyword)
     if not keyword:
         return []
@@ -79,8 +100,6 @@ def fetch_related_news(
     days = max(1, math.ceil(hours / 24))
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    # 너무 넓은 검색을 줄이기 위해 카테고리 힌트를 함께 넣습니다.
-    # 예: "기준금리 경제 금융 물가 금리 환율 when:1d"
     hint = clean_text(category_hint)
     search_text = f"{keyword} {hint} when:{days}d" if hint else f"{keyword} when:{days}d"
     query = quote_plus(search_text)
@@ -96,7 +115,6 @@ def fetch_related_news(
     seen = set()
     for entry in getattr(feed, "entries", [])[: max(limit * 4, limit)]:
         entry_dt = _parse_entry_datetime(entry)
-        # published 시간이 확인되는 경우, 최근 lookback_hours 초과 기사는 제외합니다.
         if entry_dt is not None and entry_dt < cutoff:
             continue
 
@@ -106,7 +124,6 @@ def fetch_related_news(
         published = _published_display(entry_dt, entry)
         age = _age_hours(entry_dt)
 
-        # Google News RSS 제목은 "기사 제목 - 매체명" 형태인 경우가 많아 중복 표시를 줄입니다.
         if source and title.endswith(f" - {source}"):
             title = title[: -(len(source) + 3)].strip()
 
@@ -121,8 +138,42 @@ def fetch_related_news(
             "published": published,
             "published_at": entry_dt.isoformat() if entry_dt else "",
             "age_hours": round(age, 2) if age is not None else "",
+            "provider": "google_news",
         })
         if len(rows) >= limit:
             break
 
     return rows
+
+
+def fetch_related_news(
+    keyword: str,
+    limit: int = 5,
+    geo: str = "KR",
+    category_hint: str = "",
+    lookback_hours: int = 24,
+) -> list[dict]:
+    """관련 신문 기사 링크를 가져옵니다.
+
+    기본값은 네이버 뉴스 검색 API 우선입니다. 네이버 키가 없거나 결과가 부족하면
+    Google News RSS로 부족분을 보완합니다.
+    """
+    keyword = clean_text(keyword)
+    if not keyword:
+        return []
+
+    provider = os.environ.get("NEWS_PROVIDER", "naver_first").strip().lower()
+    rows: list[dict] = []
+
+    if provider in {"naver", "naver_first", "mixed"} and fetch_naver_news is not None:
+        try:
+            rows.extend(fetch_naver_news(keyword, limit=limit, lookback_hours=lookback_hours))
+        except Exception as exc:
+            print(f"[WARN] Naver News fetch skipped for {keyword}: {exc}")
+
+    if provider in {"google", "google_first"}:
+        rows.extend(_fetch_google_news(keyword, limit=limit, geo=geo, category_hint=category_hint, lookback_hours=lookback_hours))
+    elif len(rows) < limit and provider in {"naver_first", "mixed"}:
+        rows.extend(_fetch_google_news(keyword, limit=limit - len(rows), geo=geo, category_hint=category_hint, lookback_hours=lookback_hours))
+
+    return _dedupe_news(rows, limit)

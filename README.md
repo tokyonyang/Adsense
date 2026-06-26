@@ -1,38 +1,44 @@
-# AdSense SEO 자동화 스타터
+# AdSense SEO 자동화 스타터 v11
 
-트렌드 키워드를 수집하고, 텔레그램으로 **오늘의 핫이슈 / 오늘의 카드뉴스 / 오늘의 작성글 후보**를 보내는 자동화 패키지입니다. 기본값은 경제·금융 관련 아이템만 우선 활용하며, 긴 글 초안은 미리 생성하지 않습니다.
+트렌드 키워드를 수집하고, 텔레그램으로 **오늘의 핫이슈 / 오늘의 카드뉴스 / 오늘의 작성글 후보**를 보내는 자동화 패키지입니다.
 
-## 이번 수정 사항 v10
+## v11 핵심 변경
 
-- 전체 후보를 **최근 24시간 조회수 많은 순**으로 정렬합니다.
-- 최근 24시간 경제·금융 후보 또는 근거자료가 부족하면 자동으로 `전체 카테고리 24시간` → `전체 카테고리 48시간` 순서로 확장합니다.
-- 텔레그램 리포트 구조를 아래 3개 섹션으로 바꿨습니다.
-  - `🔥 오늘의 핫이슈`: 조회수 높은 순으로 TOP 10 정리
-  - `🃏 오늘의 카드뉴스`: 카드뉴스로 만들기 좋은 항목 TOP 3 추천
-  - `✍️ 오늘의 작성글`: 블로그/워드프레스 글로 작성하기 좋은 항목 TOP 3 추천
-- 대상 항목마다 뒷받침할 수 있는 **관련 신문 기사 링크**를 함께 붙입니다.
-- 기사 URL 원문은 노출하지 않고 `링크1` ~ `링크5` 클릭 라벨로 표시합니다.
-- Google Trends RSS의 `20K+`, `1M+`, `2만+` 같은 조회수 표현을 숫자로 변환하고, 최근 24시간 기준으로 정렬합니다.
-- 수동 주제처럼 조회수 정보가 없는 항목은 하단으로 밀립니다. seed 키워드는 기본 제외됩니다.
+- 기존 Google 기반 수집에 **Naver Search API 뉴스 검색**을 추가했습니다.
+- 근거 기사 링크는 기본적으로 **네이버 뉴스 우선**으로 가져오고, 부족한 경우 Google News RSS로 보완합니다.
+- 네이버 뉴스 최신 제목을 후보 아이템으로 보강할 수 있습니다.
+- 네이버 DataLab 통합검색어 트렌드 상대지수를 순위 보정에 사용합니다.
+- 최종 정렬은 단순 Google 조회수만이 아니라 아래 기준을 합산한 **종합 관심도 순**입니다.
+  - Google Trends RSS approx traffic
+  - 최근 네이버 뉴스 기사 수
+  - 네이버 DataLab 상대 검색지수
+  - 근거 기사 수 및 내부 점수
 
+> 참고: 네이버 Open API는 개별 검색어의 절대 조회수나 기사 조회수를 제공하지 않습니다. 그래서 v11의 `관심도`는 실제 조회수 원문이 아니라 Google Trends 조회수 참고값 + 네이버 뉴스량 + DataLab 상대지수를 합산한 운영용 점수입니다.
 
-## v9~v10 핵심 변경: 최근 24시간 기준 + 자동 확장
+## 필요한 GitHub Secrets
 
-- Google Trends RSS 항목의 `published/updated` 시간이 확인되면 **최근 24시간 초과 항목은 제외**합니다.
-- Google News RSS 검색어를 `when:1d`로 바꾸고, 기사 발행 시간이 확인되면 **최근 24시간 초과 기사는 제외**합니다.
-- 오래된 seed 키워드가 섞이는 문제를 막기 위해 `INCLUDE_SEED_KEYWORDS=false`를 기본값으로 바꿨습니다.
-- 텔레그램 리포트에 실제 사용된 `분야 필터`, `수집 기준`, `자동 대체 검색 로그`가 표시됩니다.
-- 수동 입력 주제는 조회수 데이터가 없으므로 근거 기사만 최근 24시간 기준으로 붙습니다.
+기존 값에 아래 2개를 추가하면 네이버 기반 보강이 활성화됩니다.
 
-## 기본 실행
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env
-python main.py --max-keywords 30 --max-posts 10 --category-filter finance --lookback-hours 24
+```text
+NAVER_CLIENT_ID
+NAVER_CLIENT_SECRET
 ```
 
-기본값은 아래와 같습니다.
+기존 필수 값은 다음과 같습니다.
+
+```text
+GEMINI_API_KEY
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+WP_SITE_URL
+WP_USERNAME
+WP_APP_PASSWORD
+```
+
+`ITEM_LIST_ONLY=true`로 후보 리포트만 받을 경우 WordPress 관련 값은 당장 사용되지 않습니다.
+
+## 기본 실행값
 
 ```text
 MAX_KEYWORDS=30
@@ -47,17 +53,20 @@ HOT_ISSUE_COUNT=10
 CARD_NEWS_COUNT=3
 ARTICLE_COUNT=3
 CATEGORY_FILTER=finance
+NEWS_PROVIDER=naver_first
+USE_NAVER_NEWS_CANDIDATES=true
+USE_NAVER_DATALAB=true
 ```
 
-즉, 최대 30개 키워드를 최근 24시간 기준으로 수집하고 그중 경제·금융 관련 후보를 조회수 순으로 정리한 뒤, 텔레그램에 오늘의 운영 후보만 보냅니다.
+## 자동 확장 로직
 
-후보가 없거나 근거 기사가 하나도 붙지 않으면 자동으로 아래 순서로 재검색합니다.
+기본은 **경제·금융 + 최근 24시간**입니다. 후보가 없거나 근거자료가 부족하면 자동으로 확장합니다.
 
 1. `finance + 최근 24시간`
 2. `all + 최근 24시간`
 3. `all + 최근 48시간`
 
-최종 텔레그램 메시지에는 어떤 단계가 사용됐는지 `자동 대체 검색 로그`로 표시됩니다.
+텔레그램 상단의 `자동 대체 검색 로그`에서 실제 사용된 단계를 확인할 수 있습니다.
 
 ## 텔레그램 표시 예시
 
@@ -65,35 +74,20 @@ CATEGORY_FILTER=finance
 🔥 오늘의 핫이슈 · 카드뉴스 · 작성글 후보
 분야 필터: 경제·금융 우선
 수집 기준: 최근 24시간 이내
-정렬 기준: 최근 조회수 많은 순 → 근거 기사 수 → 내부 점수
+정렬 기준: 종합 관심도 순 = Google Trends 조회수 + 네이버 뉴스량 + 네이버 DataLab 상대지수
 근거자료 포함: 8/10개 항목
-
-🔎 자동 대체 검색 로그
-1) 경제·금융 우선 / 최근 24시간: 후보 0개 / 근거 포함 0개
-2) 전체 / 최근 24시간: 후보 10개 / 근거 포함 8개 → 사용
+근거자료는 네이버 뉴스 우선, 부족하면 Google News로 보완합니다.
 
 🔥 오늘의 핫이슈 TOP 10
 
 1. [경제·금융] 기준금리 전망
-조회수: 10.0만+ / 근거강도: 강함
-수집경로: google_trends_rss
+관심도: 148,000점 / Google 조회수: 10.0만+ / 근거강도: 강함
+네이버 신호: 최근뉴스 6건 / DataLab 72.5
+수집경로: google_trends_rss_24h
 작성각도: 금리 변화 → 가계부담/저축전략 → 확인할 금융상품 포인트
 근거자료:
-  1) 기사 제목 (매체 · 날짜) / 링크1
-  2) 기사 제목 (매체 · 날짜) / 링크2
-  3) 기사 제목 (매체 · 날짜) / 링크3
-  4) 기사 제목 (매체 · 날짜) / 링크4
-  5) 기사 제목 (매체 · 날짜) / 링크5
-
-🃏 오늘의 카드뉴스 추천
-1. #1 기준금리 전망
-선정이유: 조회수 10.0만+, 기사근거 5개
-구성방향: 원인 → 가계 영향 → 오늘 확인할 숫자 → 대응법 카드 구성
-
-✍️ 오늘의 작성글 추천
-1. #1 기준금리 전망
-선정이유: 검색 유입 가능성 + 조회수 10.0만+ + 근거 기사 5개
-글방향: 기준금리 전망 배경과 가계/금융상품 영향, 확인해야 할 지표를 정리하는 해설형 글
+  1) 기사 제목 (언론사 · 06-26 08:31) / 링크1
+  2) 기사 제목 (언론사 · 06-26 08:12) / 링크2
 ```
 
 ## GitHub Actions 수동 실행 옵션
@@ -104,12 +98,15 @@ CATEGORY_FILTER=finance
 |---|---:|---|
 | `topics` | 비움 | 특정 주제만 보고 싶을 때 쉼표/줄바꿈으로 입력 |
 | `category_filter` | `finance` | 경제·금융 우선. `all`이면 전체 카테고리 |
+| `news_provider` | `naver_first` | 네이버 뉴스 우선. `google`이면 Google News만 사용 |
+| `use_naver_news_candidates` | `true` | 네이버 뉴스 최신 제목을 후보 아이템으로 보강 |
+| `use_naver_datalab` | `true` | 네이버 DataLab 상대지수로 순위 보정 |
 | `item_list_only` | `true` | 글 초안 생성 없이 후보 리포트만 전송 |
 | `news_links_per_topic` | `5` | 주제별 근거 기사 링크 수 |
 | `lookback_hours` | `24` | 최근 자료 기준 시간 |
 | `auto_fallback` | `true` | 후보/근거가 부족하면 전체 카테고리와 48시간으로 자동 확장 |
 | `fallback_lookback_hours` | `48` | 자동 확장 시 최종 시간 범위 |
-| `include_seed_keywords` | `false` | seed 키워드 포함 여부. 최신 24시간 운영에서는 false 권장 |
+| `include_seed_keywords` | `false` | seed 키워드 포함 여부. 최신 운영에서는 false 권장 |
 | `hot_issue_count` | `10` | 오늘의 핫이슈 표시 개수 |
 | `card_news_count` | `3` | 오늘의 카드뉴스 추천 개수 |
 | `article_count` | `3` | 오늘의 작성글 추천 개수 |
@@ -127,24 +124,19 @@ CATEGORY_FILTER=finance
 
 전체 카테고리를 보고 싶으면 수동 실행에서 `category_filter=all`로 바꾸면 됩니다.
 
-## WordPress 글 초안 생성이 필요할 때
+## 로컬 실행
 
-평소에는 `ITEM_LIST_ONLY=true`를 권장합니다. 특정 주제를 보고 글 작성까지 하고 싶을 때만 아래처럼 실행하세요.
-
-```text
-item_list_only = false
-telegram_only = true
-send_articles_to_telegram = true
-topics = 기준금리 전망, 원달러 환율 전망
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+python main.py --max-keywords 30 --max-posts 10 --category-filter finance --lookback-hours 24
 ```
-
-이 경우 WordPress 업로드 없이 텔레그램으로 글 초안을 받을 수 있습니다.
 
 ## 보고서 파일
 
 실행이 끝나면 GitHub Actions artifact로 아래 파일이 저장됩니다.
 
-- `trend_keywords_raw_YYYYMMDD.csv`: 원본 수집 키워드. 최근 24시간 기준 컬럼 포함
-- `trend_keywords_YYYYMMDD.csv`: 카테고리 필터 후 조회수 정렬 키워드
+- `trend_keywords_raw_YYYYMMDD.csv`: 원본 수집 키워드
+- `trend_keywords_YYYYMMDD.csv`: 카테고리 필터 후 키워드
 - `idea_items_YYYYMMDD.json`: 후보 아이템과 근거 기사 전체 데이터
-- `idea_items_YYYYMMDD.csv`: 순위, 조회수, 추천 용도, 근거 기사 링크 요약
+- `idea_items_YYYYMMDD.csv`: 순위, 관심도, 네이버 신호, 추천 용도, 근거 기사 링크 요약
