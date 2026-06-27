@@ -60,6 +60,77 @@ def validate_telegram_env() -> dict[str, Any]:
     }
 
 
+def validate_telegram_connection(*, fail_silently: bool = False) -> dict[str, Any]:
+    """
+    텔레그램 연결을 메시지 전송 없이 검증합니다.
+
+    검증 항목:
+    1. TELEGRAM_BOT_TOKEN 존재 여부
+    2. getMe API로 봇 토큰 유효성 확인
+    3. getChat API로 TELEGRAM_CHAT_ID 접근 가능 여부 확인
+
+    이 함수는 sendMessage를 호출하지 않으므로 텔레그램 채팅방에 테스트 문구가 남지 않습니다.
+    """
+    bot_token = _env("TELEGRAM_BOT_TOKEN")
+    chat_id = _env("TELEGRAM_CHAT_ID")
+
+    if not bot_token:
+        msg = "TELEGRAM_BOT_TOKEN이 설정되지 않았습니다."
+        if fail_silently:
+            return {"ok": False, "reason": msg}
+        raise RuntimeError(msg)
+
+    if not chat_id:
+        msg = "TELEGRAM_CHAT_ID가 설정되지 않았습니다."
+        if fail_silently:
+            return {"ok": False, "reason": msg}
+        raise RuntimeError(msg)
+
+    base = f"{TELEGRAM_API_BASE}{bot_token}"
+
+    try:
+        me_response = requests.get(f"{base}/getMe", timeout=30)
+        me_data = me_response.json()
+    except Exception as exc:
+        msg = f"Telegram getMe 호출 실패: {exc}"
+        if fail_silently:
+            return {"ok": False, "reason": msg}
+        raise RuntimeError(msg)
+
+    if not me_response.ok or not me_data.get("ok"):
+        msg = f"Telegram bot token 검증 실패: {me_data}"
+        if fail_silently:
+            return {"ok": False, "reason": msg}
+        raise RuntimeError(msg)
+
+    try:
+        chat_response = requests.get(f"{base}/getChat", params={"chat_id": chat_id}, timeout=30)
+        chat_data = chat_response.json()
+    except Exception as exc:
+        msg = f"Telegram getChat 호출 실패: {exc}"
+        if fail_silently:
+            return {"ok": False, "reason": msg}
+        raise RuntimeError(msg)
+
+    if not chat_response.ok or not chat_data.get("ok"):
+        msg = f"Telegram chat_id 검증 실패: {chat_data}"
+        if fail_silently:
+            return {"ok": False, "reason": msg}
+        raise RuntimeError(msg)
+
+    bot = me_data.get("result", {})
+    chat = chat_data.get("result", {})
+
+    return {
+        "ok": True,
+        "bot_username": bot.get("username"),
+        "bot_id": bot.get("id"),
+        "chat_id_masked": mask_secret(chat_id),
+        "chat_type": chat.get("type"),
+        "chat_title": chat.get("title") or chat.get("username") or chat.get("first_name"),
+    }
+
+
 def send_telegram_message(
     message: str,
     *,

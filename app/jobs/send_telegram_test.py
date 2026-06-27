@@ -1,28 +1,32 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
-from app.services.telegram_report_service import send_telegram_message, validate_telegram_env
+from app.services.telegram_report_service import validate_telegram_connection, validate_telegram_env
 
 
 def main():
-    env_status = validate_telegram_env()
+    """
+    텔레그램 연결 상태를 검증합니다.
+
+    v1.16 변경:
+    - 더 이상 테스트 메시지를 텔레그램으로 보내지 않습니다.
+    - getMe / getChat API로 토큰과 채팅 접근 가능 여부만 확인합니다.
+    - 결과는 GitHub Actions 로그에만 출력합니다.
+    """
     print("[telegram env]")
-    print(json.dumps(env_status, ensure_ascii=False, indent=2))
+    print(json.dumps(validate_telegram_env(), ensure_ascii=False, indent=2))
 
-    message = (
-        "<b>✅ Telegram 연결 테스트</b>\n\n"
-        f"- 실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        "- 메시지가 보이면 GitHub Actions → Telegram 연결은 정상입니다."
-    )
+    result = validate_telegram_connection(fail_silently=False)
 
-    result = send_telegram_message(message, fail_silently=False)
-    print("[telegram send result]")
+    print("[telegram connection validation]")
     print(json.dumps({
         "ok": result.get("ok"),
-        "sent_parts": result.get("sent_parts"),
+        "bot_username": result.get("bot_username"),
         "chat_id_masked": result.get("chat_id_masked"),
+        "chat_type": result.get("chat_type"),
+        "chat_title": result.get("chat_title"),
+        "message_sent": False,
     }, ensure_ascii=False, indent=2))
 
 
