@@ -1,26 +1,36 @@
-# v1.21 아침 헤드라인 운영 안정화 패치
+# v1.22 헤드라인 이미지 퀄리티 개선 + 뉴스 링크 포함 패치
 
 ## 교체할 파일
 
 ```text
+app/services/telegram_photo_service.py
+app/services/headline_news_image_service.py
 app/jobs/send_headline_news_report.py
 .github/workflows/morning-headline-news.yml
-docs/morning_headline_resilient_fallback_v1_21.md
+docs/morning_headline_premium_image_v1_22.md
 ```
 
-## 해결하는 문제
+## 핵심 개선
 
-v1.20에서 후보가 0개일 때 workflow가 실패하던 문제를 수정합니다.
-
-## 변경 내용
-
+기존:
 ```text
-24h → 48h → 날짜포함 재검색 → 72h → 날짜불명 후보
+Pillow로 사각형과 텍스트를 직접 그림
 ```
 
-순서로 후보를 찾습니다.
+변경:
+```text
+HTML/CSS 프리미엄 템플릿 생성
+Playwright로 고해상도 PNG 캡처
+Telegram 전송
+```
 
-다만 날짜가 명확히 있고 72시간보다 오래된 뉴스는 최종적으로 제외합니다.
+## 추가 개선
+
+- 헤드라인 카드 10개 → 8개로 줄여 가독성 개선
+- 카드 하단에 출처/원문 링크 영역 포함
+- 텍스트 메시지에는 실제 원문 URL 포함
+- `HEADLINE_IMAGE_SCALE=2`로 고해상도 렌더링
+- `HEADLINE_SEND_AS_DOCUMENT=true` 설정 시 원본 화질 파일로 전송 가능
 
 ## 적용 후 테스트
 
@@ -30,11 +40,12 @@ Actions
 → Run workflow
 ```
 
-확인할 로그:
+## 만약 텔레그램에서 이미지가 여전히 흐릿하면
+
+workflow의 아래 값을 변경하세요.
 
 ```text
-[headline selected]
-[briefs preview]
+HEADLINE_SEND_AS_DOCUMENT: "true"
 ```
 
-후보가 0개여도 workflow는 실패하지 않고 텔레그램에 안내 메시지만 보냅니다.
+그러면 텔레그램이 이미지 압축을 덜 하고 파일 원본으로 보냅니다.

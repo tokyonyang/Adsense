@@ -1,262 +1,508 @@
 from __future__ import annotations
 
+import html
+import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
-
-from PIL import Image, ImageDraw, ImageFont
+from urllib.parse import urlparse
 
 KST = timezone(timedelta(hours=9))
-
-
-def _font(size: int, bold: bool = False):
-    candidates = [
-        "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf" if bold else "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for path in candidates:
-        try:
-            return ImageFont.truetype(path, size=size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
-
-
-def _wrap_text(draw, text: str, font, max_width: int, max_lines: int):
-    text = str(text or "").strip()
-    if not text:
-        return []
-    words = text.split()
-    if not words:
-        words = [text]
-
-    lines = []
-    current = words[0]
-
-    for word in words[1:]:
-        candidate = current + " " + word
-        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
-            current = candidate
-        else:
-            lines.append(current)
-            current = word
-            if len(lines) >= max_lines:
-                break
-
-    if len(lines) < max_lines and current:
-        lines.append(current)
-
-    fixed = []
-    for line in lines[:max_lines]:
-        if draw.textbbox((0, 0), line, font=font)[2] <= max_width:
-            fixed.append(line)
-        else:
-            buf = ""
-            for ch in line:
-                cand = buf + ch
-                if draw.textbbox((0, 0), cand, font=font)[2] <= max_width:
-                    buf = cand
-                else:
-                    if buf:
-                        fixed.append(buf)
-                    buf = ch
-                    if len(fixed) >= max_lines:
-                        break
-            if buf and len(fixed) < max_lines:
-                fixed.append(buf)
-    return fixed[:max_lines]
-
-
-def _draw_round_rect(draw, box, radius, outline, fill, width=2):
-    draw.rounded_rectangle(box, radius=radius, outline=outline, fill=fill, width=width)
 
 
 def _weekday_ko(dt: datetime) -> str:
     return "월화수목금토일"[dt.weekday()]
 
 
+def _domain(url: str | None) -> str:
+    if not url:
+        return "news"
+    try:
+        host = urlparse(url).netloc or urlparse(url).path
+        host = host.replace("www.", "")
+        return host[:28] or "news"
+    except Exception:
+        return "news"
+
+
 def _category_color(category: str) -> str:
     return {
-        "경제": "#F6C344",
-        "증시": "#FF7A45",
-        "정치": "#4D96FF",
-        "사회": "#00C389",
-        "국제": "#A66BFF",
-        "산업": "#FFB020",
-        "생활": "#00B8D9",
-        "IT": "#7A5AF8",
-        "스포츠": "#22C55E",
-    }.get(category, "#F6C344")
+        "경제": "#f4c542",
+        "증시": "#ff7a45",
+        "정치": "#4d96ff",
+        "사회": "#00c389",
+        "국제": "#a66bff",
+        "산업": "#ffb020",
+        "생활": "#00b8d9",
+        "IT": "#7a5af8",
+        "스포츠": "#22c55e",
+    }.get(category, "#f4c542")
 
 
-def _clean_card_summary(text: str) -> str:
-    text = str(text or "").strip()
-    ban = [
-        "세부 내용 확인 필요",
-        "후속 기사 확인 필요",
-        "분야 주요 이슈",
-        "주요 이슈",
-        "상세 내용은 본문 기사 확인 필요",
-    ]
-    for b in ban:
-        text = text.replace(b, "")
-    text = text.strip(" -·ㆍ|")
-    return text
+def _icon(category: str) -> str:
+    return {
+        "경제": "₩",
+        "증시": "↘",
+        "정치": "🏛",
+        "사회": "⚖",
+        "국제": "🌐",
+        "산업": "🏭",
+        "생활": "☀",
+        "IT": "AI",
+        "스포츠": "⚽",
+    }.get(category, "•")
 
 
-def _fallback_card_summaries(item: dict[str, Any]) -> list[str]:
-    category = item.get("category", "주요")
-    source = item.get("source", "")
-    published_at = item.get("published_at")
+def _clean(value: Any, limit: int | None = None) -> str:
+    text = str(value or "").replace("...", "…").replace("⋯", "…")
+    text = re.sub(r"\s+", " ", text).strip()
+    if limit and len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return html.escape(text)
 
-    lines = []
-    if item.get("description"):
-        lines.append(str(item["description"])[:26].rstrip("…") + ("…" if len(str(item["description"])) > 26 else ""))
 
-    keywords = item.get("keywords") or []
-    if keywords:
-        lines.append("핵심: " + ", ".join(str(k) for k in keywords[:3]))
-
-    if published_at:
-        try:
-            time_text = published_at.strftime("%m/%d %H:%M")
-            lines.append(f"{category} · {time_text}")
-        except Exception:
-            pass
-
-    if source:
-        lines.append(f"출처: {source}")
-
+def _keywords(items: list[dict[str, Any]], limit: int = 8) -> list[str]:
     result = []
-    for line in lines:
-        line = _clean_card_summary(line)
-        if line and line not in result:
-            result.append(line)
-
-    if not result:
-        result = [f"{category} 핵심 이슈", "관련 기사 확인"]
-
-    return result[:3]
-
-
-def render_headline_news_image(headlines: list[dict[str, Any]], *, output_path: str | Path, title: str = "오늘의 헤드라인 뉴스") -> str:
-    W, H = 1400, 2100
-    bg = "#090909"
-    gold = "#F6C344"
-    panel = "#101010"
-    white = "#F7F7F7"
-    muted = "#D2D2D2"
-
-    img = Image.new("RGB", (W, H), bg)
-    draw = ImageDraw.Draw(img)
-
-    title_font = _font(74, bold=True)
-    sub_font = _font(30, bold=False)
-    date_font = _font(34, bold=True)
-    tile_num_font = _font(42, bold=True)
-    tile_title_font = _font(30, bold=True)
-    tile_summary_font = _font(21, bold=False)
-    keyword_title_font = _font(28, bold=True)
-    keyword_font = _font(24, bold=False)
-
-    pad = 28
-    draw.text((pad, 30), "오늘의 ", font=title_font, fill=white)
-    x2 = draw.textbbox((pad, 30), "오늘의 ", font=title_font)[2]
-    draw.text((x2, 30), "헤드라인 뉴스", font=title_font, fill=gold)
-    draw.text((740, 52), "아침 브리핑", font=sub_font, fill=white)
-
-    now = datetime.now(KST)
-    date_box = (980, 26, W - pad, 102)
-    _draw_round_rect(draw, date_box, 20, gold, "#111111", 3)
-    draw.text((1005, 44), f"📅 {now:%Y.%m.%d} ({_weekday_ko(now)})", font=date_font, fill=white)
-
-    start_y = 120
-    footer_h = 120
-    grid_h = H - start_y - footer_h - 30
-    gap = 18
-    rows = 5
-    tile_w = (W - pad * 2 - gap) // 2
-    tile_h = (grid_h - gap * (rows - 1)) // rows
-
-    items = headlines[:10]
-    for idx, item in enumerate(items):
-        row = idx // 2
-        col = idx % 2
-        x = pad + col * (tile_w + gap)
-        y = start_y + row * (tile_h + gap)
-        box = (x, y, x + tile_w, y + tile_h)
-        _draw_round_rect(draw, box, 18, gold, panel, 3)
-
-        num_box = (x + 16, y + 16, x + 74, y + 74)
-        _draw_round_rect(draw, num_box, 12, gold, "#161616", 2)
-        n_text = str(idx + 1)
-        nb = draw.textbbox((0, 0), n_text, font=tile_num_font)
-        draw.text((num_box[0] + (58 - (nb[2]-nb[0]))/2, num_box[1] + 6), n_text, font=tile_num_font, fill=gold)
-
-        category = item.get("category", "주요")
-        cat_color = _category_color(category)
-        cat_box = (x + tile_w - 130, y + 18, x + tile_w - 18, y + 56)
-        _draw_round_rect(draw, cat_box, 16, cat_color, "#151515", 2)
-        draw.text((cat_box[0] + 18, cat_box[1] + 7), category, font=_font(20, bold=True), fill=cat_color)
-
-        headline = item.get("headline_text") or item.get("short_title") or item.get("title") or ""
-        title_lines = _wrap_text(draw, headline, tile_title_font, tile_w - 44, 2)
-        ty = y + 88
-        for line in title_lines:
-            draw.text((x + 22, ty), line, font=tile_title_font, fill=white)
-            ty += 36
-
-        highlight = str(item.get("highlight") or "").strip()
-        if highlight:
-            hi_lines = _wrap_text(draw, highlight, _font(24, bold=True), tile_w - 44, 2)
-            for line in hi_lines:
-                draw.text((x + 22, ty), line, font=_font(24, bold=True), fill=gold)
-                ty += 30
-
-        cx, cy = x + tile_w - 110, y + tile_h - 82
-        draw.ellipse((cx - 44, cy - 44, cx + 44, cy + 44), outline=cat_color, fill="#151515", width=3)
-        icon = item.get("icon", "•")
-        draw.text((cx - 22, cy - 26), icon, font=_font(36, bold=True), fill=cat_color)
-
-        raw_summaries = item.get("summaries") or []
-        summaries = []
-        for s in raw_summaries:
-            cleaned = _clean_card_summary(s)
-            if cleaned and cleaned not in summaries:
-                summaries.append(cleaned)
-
-        if not summaries:
-            summaries = _fallback_card_summaries(item)
-
-        bullet_y = y + 150 + (40 if highlight else 0)
-        max_y = y + tile_h - 30
-        for summary in summaries[:3]:
-            lines = _wrap_text(draw, summary, tile_summary_font, tile_w - 160, 2)
-            if not lines or bullet_y + len(lines) * 28 > max_y:
-                break
-            draw.ellipse((x + 24, bullet_y + 9, x + 32, bullet_y + 17), fill=gold)
-            ly = bullet_y
-            for line in lines:
-                draw.text((x + 42, ly), line, font=tile_summary_font, fill=muted)
-                ly += 25
-            bullet_y = ly + 10
-
-    foot_box = (pad, H - footer_h, W - pad, H - 24)
-    _draw_round_rect(draw, foot_box, 16, gold, "#0E0E0E", 3)
-    tag_box = (pad + 18, H - footer_h + 18, pad + 230, H - 42)
-    _draw_round_rect(draw, tag_box, 14, gold, "#151515", 2)
-    draw.text((tag_box[0] + 16, tag_box[1] + 12), "🏷 핵심 키워드", font=keyword_title_font, fill=gold)
-
-    kw = []
     for item in items:
-        for k in item.get("keywords", []):
-            if k and k not in kw:
-                kw.append(k)
-    kw_text = " / ".join(kw[:10]) if kw else "경제 / 증시 / 정책 / 산업 / 국제 / IT"
-    for i, line in enumerate(_wrap_text(draw, kw_text, keyword_font, W - 330, 3)):
-        draw.text((pad + 260, H - footer_h + 22 + i * 28), line, font=keyword_font, fill=white)
+        for k in item.get("keywords") or []:
+            k = str(k).strip()
+            if k and k not in result:
+                result.append(k)
+            if len(result) >= limit:
+                return result
+    return result
 
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    img.save(output_path, format="PNG", optimize=True)
+
+def build_premium_headline_html(items: list[dict[str, Any]]) -> str:
+    """
+    v1.22:
+    Pillow 직접 드로잉 대신 HTML/CSS로 고품질 카드 이미지를 구성합니다.
+    Playwright가 이 HTML을 고해상도 PNG로 캡처합니다.
+    """
+    now = datetime.now(KST)
+    cards = []
+    for idx, item in enumerate(items[:8], start=1):
+        category = str(item.get("category") or "주요")
+        color = _category_color(category)
+        headline = _clean(item.get("headline_text") or item.get("title"), 52)
+        summaries = [s for s in (item.get("summaries") or []) if str(s).strip()]
+        summaries = summaries[:2]
+        while len(summaries) < 2:
+            summaries.append("관련 이슈 확인 필요")
+
+        source = _domain(item.get("url"))
+        link_text = "원문 링크" if item.get("url") else "링크 없음"
+        icon = item.get("icon") or _icon(category)
+
+        card = f"""
+        <section class="card" style="--accent:{color}">
+          <div class="card-top">
+            <div class="num">{idx}</div>
+            <div class="pill">{html.escape(category)}</div>
+          </div>
+          <div class="card-body">
+            <div class="headline">{headline}</div>
+            <ul>
+              <li>{_clean(summaries[0], 42)}</li>
+              <li>{_clean(summaries[1], 42)}</li>
+            </ul>
+          </div>
+          <div class="visual">
+            <div class="orb">{html.escape(str(icon)[:3])}</div>
+          </div>
+          <div class="source">
+            <span>출처: {html.escape(source)}</span>
+            <span class="divider"></span>
+            <span>{link_text} ↗</span>
+          </div>
+        </section>
+        """
+        cards.append(card)
+
+    kws = _keywords(items)
+    if not kws:
+        kws = ["경제", "증시", "정책", "산업", "국제", "IT"]
+
+    keyword_html = "".join(f"<span>{html.escape(k)}</span>" for k in kws[:8])
+
+    return f"""
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face {{
+    font-family: 'NanumGothic';
+    src: local('NanumGothic');
+  }}
+
+  * {{
+    box-sizing: border-box;
+  }}
+
+  body {{
+    margin: 0;
+    width: 1400px;
+    height: 1980px;
+    background:
+      radial-gradient(circle at 20% 4%, rgba(246,197,66,0.18), transparent 23%),
+      radial-gradient(circle at 83% 20%, rgba(255,122,69,0.12), transparent 23%),
+      linear-gradient(180deg, #050505 0%, #0a0a0a 45%, #050505 100%);
+    font-family: NanumGothic, 'Noto Sans CJK KR', 'Apple SD Gothic Neo', sans-serif;
+    color: #f8f8f8;
+    overflow: hidden;
+  }}
+
+  .page {{
+    width: 1400px;
+    height: 1980px;
+    padding: 42px 42px 34px;
+    position: relative;
+  }}
+
+  .page::before {{
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(180deg, rgba(0,0,0,0.6), transparent 80%);
+    pointer-events: none;
+  }}
+
+  .header {{
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 330px;
+    align-items: start;
+    margin-bottom: 34px;
+  }}
+
+  .brand {{
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }}
+
+  .newspaper {{
+    width: 88px;
+    height: 88px;
+    border: 5px solid #f4c542;
+    border-radius: 16px;
+    transform: rotate(-9deg);
+    position: relative;
+    box-shadow: 0 0 28px rgba(246,197,66,0.25);
+  }}
+
+  .newspaper::before {{
+    content: "";
+    position: absolute;
+    left: 16px;
+    top: 18px;
+    width: 46px;
+    height: 8px;
+    background: #f4c542;
+    box-shadow: 0 18px 0 #f4c542, 0 36px 0 #f4c542;
+  }}
+
+  .title-main {{
+    font-size: 76px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -4px;
+  }}
+
+  .title-main .gold {{
+    color: #f4c542;
+    text-shadow: 0 0 24px rgba(246,197,66,0.22);
+  }}
+
+  .subtitle {{
+    margin-top: 14px;
+    font-size: 28px;
+    color: #f1d57b;
+    letter-spacing: 8px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }}
+
+  .subtitle::before,
+  .subtitle::after {{
+    content: "";
+    display: block;
+    width: 210px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #f4c542, transparent);
+  }}
+
+  .date {{
+    justify-self: end;
+    border: 2px solid #f4c542;
+    border-radius: 18px;
+    padding: 22px 30px;
+    color: #fff1b8;
+    font-size: 34px;
+    font-weight: 800;
+    box-shadow: inset 0 0 22px rgba(246,197,66,0.08), 0 0 18px rgba(246,197,66,0.13);
+  }}
+
+  .grid {{
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }}
+
+  .card {{
+    height: 385px;
+    position: relative;
+    background:
+      radial-gradient(circle at 82% 50%, color-mix(in srgb, var(--accent), transparent 83%), transparent 34%),
+      linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012));
+    border: 2.5px solid rgba(246,197,66,0.88);
+    border-radius: 24px;
+    padding: 24px 26px 70px;
+    overflow: hidden;
+    box-shadow:
+      0 24px 50px rgba(0,0,0,0.55),
+      inset 0 0 0 1px rgba(255,255,255,0.055);
+  }}
+
+  .card::after {{
+    content: "";
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    bottom: 58px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(246,197,66,0.85), transparent);
+  }}
+
+  .card-top {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 26px;
+  }}
+
+  .num {{
+    width: 78px;
+    height: 78px;
+    border: 2px solid #f4c542;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    font-size: 50px;
+    font-weight: 900;
+    color: #f4c542;
+    font-family: Georgia, serif;
+    background: rgba(0,0,0,0.25);
+    box-shadow: 0 0 18px rgba(246,197,66,0.2);
+  }}
+
+  .pill {{
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 7px 28px;
+    font-size: 23px;
+    font-weight: 900;
+    background: rgba(0,0,0,0.24);
+  }}
+
+  .headline {{
+    width: 475px;
+    min-height: 94px;
+    font-size: 37px;
+    line-height: 1.32;
+    letter-spacing: -1.8px;
+    font-weight: 900;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.65);
+  }}
+
+  ul {{
+    margin: 18px 0 0;
+    padding: 0;
+    list-style: none;
+    width: 480px;
+  }}
+
+  li {{
+    position: relative;
+    margin: 12px 0;
+    padding-left: 23px;
+    font-size: 22px;
+    line-height: 1.35;
+    color: rgba(255,255,255,0.86);
+    letter-spacing: -0.7px;
+  }}
+
+  li::before {{
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 11px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f4c542;
+    box-shadow: 0 0 12px rgba(246,197,66,0.55);
+  }}
+
+  .visual {{
+    position: absolute;
+    right: 38px;
+    bottom: 112px;
+  }}
+
+  .orb {{
+    width: 112px;
+    height: 112px;
+    border: 3px solid var(--accent);
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    font-size: 42px;
+    font-weight: 900;
+    background:
+      radial-gradient(circle, color-mix(in srgb, var(--accent), transparent 72%), transparent 68%),
+      rgba(0,0,0,0.35);
+    box-shadow: 0 0 26px color-mix(in srgb, var(--accent), transparent 55%);
+  }}
+
+  .source {{
+    position: absolute;
+    left: 28px;
+    right: 28px;
+    bottom: 20px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    color: rgba(255,255,255,0.82);
+    font-size: 20px;
+    font-weight: 700;
+  }}
+
+  .divider {{
+    width: 1px;
+    height: 22px;
+    background: rgba(246,197,66,0.7);
+  }}
+
+  .footer {{
+    position: absolute;
+    left: 42px;
+    right: 42px;
+    bottom: 34px;
+    height: 92px;
+    border: 2px solid #f4c542;
+    border-radius: 20px;
+    background: rgba(10,10,10,0.82);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 22px;
+    box-shadow: inset 0 0 20px rgba(246,197,66,0.05);
+  }}
+
+  .footer-label {{
+    flex: 0 0 auto;
+    border: 2px solid #f4c542;
+    border-radius: 14px;
+    padding: 14px 22px;
+    font-size: 26px;
+    font-weight: 900;
+    color: #f4c542;
+  }}
+
+  .keywords {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }}
+
+  .keywords span {{
+    font-size: 22px;
+    color: #f5f5f5;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(246,197,66,0.22);
+  }}
+</style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <div class="brand">
+          <div class="newspaper"></div>
+          <div>
+            <div class="title-main"><span>오늘의</span> <span class="gold">헤드라인 뉴스</span></div>
+            <div class="subtitle">아침 브리핑</div>
+          </div>
+        </div>
+      </div>
+      <div class="date">📅 {now:%Y.%m.%d} ({_weekday_ko(now)})</div>
+    </header>
+
+    <section class="grid">
+      {''.join(cards)}
+    </section>
+
+    <footer class="footer">
+      <div class="footer-label">🔎 핵심 키워드</div>
+      <div class="keywords">{keyword_html}</div>
+    </footer>
+  </main>
+</body>
+</html>
+"""
+
+
+async def _render_with_playwright(html_content: str, output_path: str | Path, *, scale: int = 2) -> str:
+    from playwright.async_api import async_playwright
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path = output_path.with_suffix(".html")
+    html_path.write_text(html_content, encoding="utf-8")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page(
+            viewport={"width": 1400, "height": 1980},
+            device_scale_factor=scale,
+        )
+        await page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
+        await page.screenshot(path=str(output_path), full_page=True, type="png")
+        await browser.close()
+
     return str(output_path)
+
+
+def render_headline_news_image(
+    headlines: list[dict[str, Any]],
+    *,
+    output_path: str | Path,
+    title: str = "오늘의 헤드라인 뉴스",
+) -> str:
+    """
+    고품질 HTML/CSS 기반 렌더링.
+    Playwright가 없으면 명확히 실패시켜 workflow 로그에서 원인을 확인합니다.
+    """
+    import asyncio
+
+    html_content = build_premium_headline_html(headlines)
+    scale = 2
+    try:
+        scale = int(str(__import__("os").getenv("HEADLINE_IMAGE_SCALE", "2")))
+    except Exception:
+        scale = 2
+
+    return asyncio.run(_render_with_playwright(html_content, output_path, scale=scale))

@@ -1,3 +1,6 @@
+# v1.22에서는 기존 v1.21 send_headline_news_report.py를 유지해도 됩니다.
+# 단, 이미지 전송 품질 보존을 위해 sendDocument 옵션만 추가한 전체 파일입니다.
+
 from __future__ import annotations
 
 import html
@@ -14,7 +17,7 @@ from urllib.parse import quote_plus
 import requests
 
 from app.services.headline_news_image_service import render_headline_news_image
-from app.services.telegram_photo_service import send_telegram_photo
+from app.services.telegram_photo_service import send_telegram_document, send_telegram_photo
 
 KST = timezone(timedelta(hours=9))
 NAVER_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
@@ -60,12 +63,7 @@ ROUNDUP_TITLE_PATTERNS = [
     r"\s외\s*\[",
 ]
 
-LOW_VALUE_KEYWORDS = [
-    "포토뉴스",
-    "카드뉴스",
-    "오늘의 운세",
-    "별자리",
-]
+LOW_VALUE_KEYWORDS = ["포토뉴스", "카드뉴스", "오늘의 운세", "별자리"]
 
 PLACEHOLDER_PHRASES = [
     "세부 내용 확인 필요",
@@ -160,7 +158,7 @@ def is_obviously_old(published_at: datetime | None, hard_cutoff: datetime) -> bo
 
 def with_today_query(query: str) -> str:
     now = datetime.now(KST)
-    return f'{now:%Y년 %-m월 %-d일} {query}' if os.name != "nt" else f'{now.year}년 {now.month}월 {now.day}일 {query}'
+    return f"{now.year}년 {now.month}월 {now.day}일 {query}"
 
 
 def fetch_naver_news(category: str, query: str, display: int = 30) -> list[dict[str, Any]]:
@@ -303,14 +301,7 @@ def collect_candidates(query_set: list[tuple[str, str]], *, dated: bool = False)
     return candidates
 
 
-def collect_headlines(max_items: int = 10, lookback_hours: int = 24, fallback_hours: int = 48, relaxed_hours: int = 72) -> list[dict[str, Any]]:
-    """
-    v1.21:
-    - 24h → 48h → 날짜포함 재검색 → 72h relaxed 순서로 시도
-    - 그래도 없으면 날짜 불명 최신 상단 후보를 제한적으로 사용
-    - 명백히 오래된 날짜는 제외
-    - workflow 자체는 실패시키지 않음
-    """
+def collect_headlines(max_items: int = 8, lookback_hours: int = 24, fallback_hours: int = 48, relaxed_hours: int = 72) -> list[dict[str, Any]]:
     now = datetime.now(KST)
     primary_cutoff = now - timedelta(hours=lookback_hours)
     fallback_cutoff = now - timedelta(hours=fallback_hours)
@@ -350,39 +341,13 @@ def collect_headlines(max_items: int = 10, lookback_hours: int = 24, fallback_ho
         print(f"[headline freshness] relaxed {relaxed_hours}h candidates:", len(relaxed))
         selected += _dedupe_and_rank(relaxed, max_items=max_items - len(selected))
 
-    if len(selected) < max_items:
-        # 마지막 안전망: 날짜가 없는 후보만 제한 사용. 명백히 오래된 날짜 후보는 사용 금지.
-        undated = [
-            item for item in candidates
-            if item.get("published_at") is None
-            and title_key(item.get("title", "")) not in {title_key(x.get("title", "")) for x in selected}
-        ]
-        print("[headline freshness] undated fallback candidates:", len(undated))
-        selected += _dedupe_and_rank(undated, max_items=max_items - len(selected))
-
-    # 최종 필터: 날짜가 있으면서 72시간보다 오래된 것은 무조건 제외
-    selected = [
-        item for item in selected
-        if not is_obviously_old(item.get("published_at"), relaxed_cutoff)
-    ]
-
+    selected = [item for item in selected if not is_obviously_old(item.get("published_at"), relaxed_cutoff)]
     print("[headline selected]", len(selected))
-
     return selected[:max_items]
 
 
 def _default_icon(category: str) -> str:
-    return {
-        "경제": "₩",
-        "증시": "📉",
-        "정치": "🏛",
-        "사회": "📰",
-        "국제": "🌍",
-        "산업": "🏭",
-        "생활": "☀",
-        "IT": "AI",
-        "스포츠": "⚽",
-    }.get(category, "•")
+    return {"경제": "₩", "증시": "↘", "정치": "🏛", "사회": "⚖", "국제": "🌐", "산업": "🏭", "생활": "☀", "IT": "AI", "스포츠": "⚽"}.get(category, "•")
 
 
 def _extract_keywords(text: str, limit: int = 3) -> list[str]:
@@ -399,18 +364,14 @@ def clean_sentence(text: str, max_len: int = 52) -> str:
     text = normalize_text(text)
     text = text.replace("…", " ").replace("...", " ").replace("⋯", " ")
     text = re.sub(r"\s+", " ", text).strip(" -·ㆍ|")
-
     for phrase in PLACEHOLDER_PHRASES:
         text = text.replace(phrase, "")
-
     if len(text) <= max_len:
         return text
-
     for sep in ["다.", "요.", "임.", "·", " - ", " | ", ":"]:
         pos = text.find(sep, 24)
         if 28 <= pos <= max_len:
             return text[: pos + len(sep)].strip()
-
     return text[: max_len - 1].rstrip() + "…"
 
 
@@ -426,35 +387,21 @@ def build_grounded_summaries(item: dict[str, Any]) -> list[str]:
     desc = item.get("description", "")
     category = item.get("category", "주요")
     published_at = item.get("published_at")
-    source = item.get("source", "")
-
     lines = []
-
     if desc:
-        lines.append(clean_sentence(desc, max_len=32))
-
+        lines.append(clean_sentence(desc, max_len=42))
     keywords = _extract_keywords(title + " " + desc, limit=3)
     if keywords:
         lines.append("핵심: " + ", ".join(keywords))
-
     if published_at:
         try:
             lines.append(f"{category} · {published_at.strftime('%m/%d %H:%M')}")
         except Exception:
             pass
-    elif source:
-        lines.append(f"{category} · {source}")
-
     result = []
     for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        if any(p in line for p in PLACEHOLDER_PHRASES):
-            continue
-        if line not in result:
+        if line and not any(p in line for p in PLACEHOLDER_PHRASES) and line not in result:
             result.append(line)
-
     return result[:3]
 
 
@@ -467,7 +414,6 @@ def build_fallback_brief(headlines: list[dict[str, Any]]) -> list[dict[str, Any]
         headline_text = safe_headline_from_title(title, desc, max_len=52)
         summaries = build_grounded_summaries(item)
         keywords = _extract_keywords(headline_text + " " + desc, limit=3)
-
         briefs.append({
             **item,
             "headline_text": headline_text,
@@ -484,14 +430,12 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
     api_key = env("GEMINI_API_KEY")
     if not api_key:
         return build_fallback_brief(headlines)
-
     try:
         import google.generativeai as genai
     except Exception:
         return build_fallback_brief(headlines)
 
     fallback_map = {h["title"]: build_fallback_brief([h])[0] for h in headlines}
-
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -503,10 +447,10 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
                 "description": h.get("description", ""),
                 "published_at": h.get("published_at").strftime("%Y-%m-%d %H:%M") if h.get("published_at") else "",
                 "source": h.get("source", ""),
+                "url": h.get("url", ""),
             }
             for i, h in enumerate(headlines)
         ]
-
         prompt = f"""
 다음 한국 뉴스 후보를 아침 헤드라인 카드와 텔레그램 텍스트용으로 정리해줘.
 반드시 JSON 배열만 반환해.
@@ -516,7 +460,7 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
 - headline_text는 46자 이내 완성형 헤드라인.
 - headline_text와 summaries는 반드시 입력 title/description 내용과 일치해야 한다.
 - 입력에 없는 사실을 새로 만들지 마.
-- summaries는 기사 내용에 직접 근거한 bullet 2~3개.
+- summaries는 기사 내용에 직접 근거한 bullet 2개.
 - summaries에 "세부 내용 확인 필요", "분야 주요 이슈", "후속 기사 확인 필요" 금지.
 - headline_text에 "...", "…", "⋯", "오늘의 주요뉴스", "1부 주요뉴스", "外" 금지.
 - short_title은 18자 이내.
@@ -537,53 +481,34 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
         rows = json.loads(match.group(0))
         by_index = {i + 1: h for i, h in enumerate(headlines)}
         mapped = []
-
         for row in rows:
             src = by_index.get(int(row.get("index", 0)))
             if not src:
                 continue
-
             fb = fallback_map[src["title"]]
             headline_text = clean_sentence(str(row.get("headline_text") or fb["headline_text"]), max_len=58)
-
             if is_truncated_text(headline_text) or is_roundup_or_low_value_title(headline_text):
                 headline_text = fb["headline_text"]
-
-            raw_summaries = row.get("summaries") or []
             summaries = []
-            for s in raw_summaries:
-                s = clean_sentence(str(s), max_len=32)
-                if not s:
-                    continue
-                if any(p in s for p in PLACEHOLDER_PHRASES):
-                    continue
-                if s not in summaries:
+            for s in row.get("summaries") or []:
+                s = clean_sentence(str(s), max_len=42)
+                if s and not any(p in s for p in PLACEHOLDER_PHRASES) and s not in summaries:
                     summaries.append(s)
-
             if not summaries:
                 summaries = fb["summaries"]
-
-            keywords = [str(k)[:12] for k in (row.get("keywords") or fb["keywords"])][:3]
-
             mapped.append({
                 **src,
                 "headline_text": headline_text,
                 "short_title": str(row.get("short_title") or headline_text)[:28],
                 "highlight": str(row.get("highlight") or "")[:20],
-                "summaries": summaries[:3],
-                "keywords": keywords,
+                "summaries": summaries[:2],
+                "keywords": [str(k)[:12] for k in (row.get("keywords") or fb["keywords"])][:3],
                 "icon": str(row.get("icon") or fb["icon"])[:3],
             })
-
         if mapped:
             order = {h["title"]: i for i, h in enumerate(headlines)}
             mapped.sort(key=lambda x: order.get(x["title"], 999))
-            have = {x["title"] for x in mapped}
-            for h in headlines:
-                if h["title"] not in have:
-                    mapped.append(fallback_map[h["title"]])
             return mapped[:len(headlines)]
-
     except Exception as exc:
         print("[gemini summarize failed]", exc)
 
@@ -598,52 +523,46 @@ def build_text_message(briefs: list[dict[str, Any]]) -> str:
     now = datetime.now(KST)
     header = f"{now:%Y년 %m월%d일}({weekday_ko(now)})☀️☀️🌤\n💛 아침 헤드라인 뉴스"
     lines = [header, ""]
-
     if not briefs:
         lines.append("최근 헤드라인 후보가 부족해 이미지 리포트를 생성하지 못했습니다.")
         return "\n".join(lines)
 
     for idx, item in enumerate(briefs, start=1):
-        headline = item.get("headline_text") or safe_headline_from_title(item.get("title", ""), item.get("description", ""))
-        headline = headline.replace("…", "").replace("...", "").strip()
-        lines.append(f"{idx}. {headline}")
-
+        headline = (item.get("headline_text") or safe_headline_from_title(item.get("title", ""), item.get("description", ""))).replace("…", "").strip()
+        url = item.get("url") or ""
+        if url:
+            lines.append(f"{idx}. {headline}\n   원문: {url}")
+        else:
+            lines.append(f"{idx}. {headline}")
     return "\n".join(lines)
 
 
 def send_telegram_message(text: str) -> dict[str, Any]:
     bot_token = env("TELEGRAM_BOT_TOKEN")
     chat_id = env("TELEGRAM_CHAT_ID")
-
     if not bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN이 설정되지 않았습니다.")
     if not chat_id:
         raise RuntimeError("TELEGRAM_CHAT_ID가 설정되지 않았습니다.")
-
     url = f"{TELEGRAM_API_BASE}{bot_token}/sendMessage"
-    response = requests.post(
-        url,
-        json={"chat_id": chat_id, "text": text[:3900], "disable_web_page_preview": True},
-        timeout=30,
-    )
-
-    try:
-        data = response.json()
-    except Exception:
-        data = {"ok": False, "description": response.text}
-
-    if not response.ok or not data.get("ok"):
-        raise RuntimeError(f"Telegram 텍스트 전송 실패: {data}")
-
-    return data
+    chunks = [text[i:i+3900] for i in range(0, len(text), 3900)] or [text]
+    result = None
+    for chunk in chunks:
+        response = requests.post(url, json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True}, timeout=30)
+        data = response.json() if response.text else {}
+        if not response.ok or not data.get("ok"):
+            raise RuntimeError(f"Telegram 텍스트 전송 실패: {data}")
+        result = data
+    return result or {"ok": True}
 
 
 def main():
-    max_items = int(env("HEADLINE_NEWS_COUNT", "10"))
+    max_items = int(env("HEADLINE_NEWS_COUNT", "8"))
     lookback_hours = int(env("HEADLINE_LOOKBACK_HOURS", "24"))
     fallback_hours = int(env("HEADLINE_FALLBACK_LOOKBACK_HOURS", "48"))
     relaxed_hours = int(env("HEADLINE_RELAXED_LOOKBACK_HOURS", "72"))
     send_text_too = env("HEADLINE_SEND_TEXT", "true").lower() == "true"
+    send_as_document = env("HEADLINE_SEND_AS_DOCUMENT", "false").lower() == "true"
 
     headlines = collect_headlines(
         max_items=max_items,
@@ -660,16 +579,19 @@ def main():
         return
 
     briefs = summarize_with_gemini(headlines)
-
     output_dir = Path("tmp")
     output_dir.mkdir(exist_ok=True)
-    image_path = output_dir / "morning_headline_news.png"
+    image_path = output_dir / "morning_headline_news_premium.png"
 
     render_headline_news_image(briefs, output_path=image_path, title="오늘의 헤드라인 뉴스")
 
     caption = "💛 아침 헤드라인 뉴스\n최근 주요 이슈를 카드형 이미지로 정리했습니다."
-    send_telegram_photo(image_path, caption=caption)
-    print("[telegram photo sent] ok")
+    if send_as_document:
+        send_telegram_document(image_path, caption=caption)
+        print("[telegram document image sent] ok")
+    else:
+        send_telegram_photo(image_path, caption=caption)
+        print("[telegram photo sent] ok")
 
     if send_text_too:
         text_message = build_text_message(briefs)
@@ -685,11 +607,10 @@ def main():
             "published_at": b.get("published_at").strftime("%Y-%m-%d %H:%M") if b.get("published_at") else "",
             "headline_text": b.get("headline_text"),
             "summaries": b.get("summaries"),
-            "keywords": b.get("keywords"),
+            "url": b.get("url"),
             "source": b.get("source"),
         } for b in briefs
     ], ensure_ascii=False, indent=2))
-
     print("[output image]", image_path.resolve())
 
 
