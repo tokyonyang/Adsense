@@ -6,7 +6,11 @@ import html as html_lib
 from pathlib import Path
 from datetime import datetime
 from collections import OrderedDict
-
+from app.services.hotissue_category_policy import (
+    apply_hotissue_category_policy,
+    category_mix_text,
+    policy_debug_text,
+)
 import pandas as pd
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
