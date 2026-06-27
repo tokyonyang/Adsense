@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
-from app.services.headline_anchor_service import build_anchor_groups
+from app.services.daily_hotissue_source import build_daily_hotissue_payload, hot_items_to_anchor_groups
 from app.services.headline_cardnews_render_service import build_cardnews_pages
 from app.services.headline_cardnews_summary_service import summarize_anchor_groups_with_gemini
 from app.services.telegram_album_service import send_media_group, send_text_message
@@ -21,20 +21,22 @@ def weekday_ko(dt: datetime) -> str:
     return "월화수목금토일"[dt.weekday()]
 
 
-def build_link_digest(issues: list[dict]) -> str:
+def build_link_digest(issues: list[dict], payload: dict) -> str:
     now = datetime.now(KST)
+    categories = payload.get("effective_categories") or []
     lines = [
         f"{now:%Y년 %m월%d일}({weekday_ko(now)})☀️☀️🌤",
         "💛 아침 헤드라인 뉴스 · 원문 링크",
         "",
-        "※ 아래 목록은 카드뉴스 생성 기준이 된 헤드라인 List입니다.",
+        "※ Daily AdSense SEO HOT Issue TOP Item을 기준으로 생성했습니다.",
+        f"수집 기준: 최근 {payload.get('effective_lookback_hours')}시간 / 카드뉴스 기준 이슈 {len(issues)}개",
         "",
     ]
 
     for issue in issues:
-        lines.append(f"{issue.get('rank')}. {issue.get('headline')}")
+        lines.append(f"{issue.get('rank')}. [{issue.get('category')}] {issue.get('headline')}")
         if issue.get("anchor_title") and issue.get("anchor_title") != issue.get("headline"):
-            lines.append(f"   기준 헤드라인: {issue.get('anchor_title')}")
+            lines.append(f"   Daily 기준 키워드: {issue.get('anchor_title')}")
         for idx, link in enumerate(issue.get("links") or [], start=1):
             title = link.get("title") or link.get("domain") or "원문"
             url = link.get("url") or ""
@@ -46,45 +48,34 @@ def build_link_digest(issues: list[dict]) -> str:
 
 
 def main():
-    max_anchors = int(env("HEADLINE_CARDNEWS_ISSUES", "5"))
-    lookback_hours = int(env("HEADLINE_LOOKBACK_HOURS", "48"))
-    similar_lookback_hours = int(env("HEADLINE_SIMILAR_LOOKBACK_HOURS", "72"))
+    payload = build_daily_hotissue_payload()
+    hot_items = payload.get("hot_items") or []
 
-    anchor_groups = build_anchor_groups(
-        max_anchors=max_anchors,
-        lookback_hours=lookback_hours,
-        similar_lookback_hours=similar_lookback_hours,
-    )
-
-    if not anchor_groups:
-        send_text_message("💛 아침 헤드라인 뉴스\n\n헤드라인 뉴스 List를 생성하지 못해 카드뉴스를 만들지 못했습니다.")
+    if not hot_items:
+        send_text_message("💛 아침 헤드라인 뉴스\n\nDaily HOT Issue 기준 항목이 없어 카드뉴스를 생성하지 못했습니다.")
         return
 
+    max_issues = int(env("HEADLINE_CARDNEWS_ISSUES", "5"))
+    anchor_groups = hot_items_to_anchor_groups(hot_items, max_issues=max_issues)
     issues = summarize_anchor_groups_with_gemini(anchor_groups)
 
     out_dir = Path("tmp/headline_cardnews")
     image_paths = build_cardnews_pages(issues, output_dir=out_dir)
 
-    caption = "💛 아침 헤드라인 뉴스\n헤드라인 List 기준으로 유사 기사 3건씩 묶어 정리했습니다."
+    caption = "💛 아침 헤드라인 뉴스\nDaily HOT Issue 기준으로 유사 기사 3건씩 묶어 정리했습니다."
     send_media_group(image_paths, caption=caption)
 
     if env("HEADLINE_SEND_LINK_DIGEST", "true").lower() == "true":
-        send_text_message(build_link_digest(issues), disable_web_page_preview=True)
+        send_text_message(build_link_digest(issues, payload), disable_web_page_preview=True)
 
-    print("[anchor-cardnews result]")
+    print("[daily-hotissue-cardnews result]")
     print(json.dumps({
-        "anchor_groups": len(anchor_groups),
-        "issues": len(issues),
+        "hot_items": len(hot_items),
+        "cardnews_issues": len(issues),
         "pages": len(image_paths),
-        "anchor_preview": [
-            {
-                "rank": g.get("rank"),
-                "category": g.get("category"),
-                "anchor_title": g.get("anchor_title"),
-                "related_articles": len(g.get("articles") or []),
-                "related_titles": [a.get("title") for a in (g.get("articles") or [])],
-            }
-            for g in anchor_groups
+        "category_mix": [
+            {"keyword": x.get("keyword"), "category": x.get("category_label"), "interest": x.get("interest_label")}
+            for x in hot_items
         ],
         "issues_preview": [
             {

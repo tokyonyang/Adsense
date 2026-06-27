@@ -103,6 +103,64 @@ CATEGORY_GROUPS = OrderedDict({
         "news_hint": "날씨 안전 재난",
         "keywords": ["날씨", "장마", "폭염", "태풍", "폭우", "호우", "재난", "안전", "지진"],
     },
+
+    "politics_current_affairs": {
+        "label": "🏛️ 시사·정치",
+        "short_label": "시사·정치",
+        "news_hint": "정치 국회 정부 선거 지방자치 시사",
+        "keywords": [
+            "정치", "국회", "정부", "대통령", "총리", "장관", "청문회", "선관위", "선거", "특검",
+            "여당", "야당", "국민의힘", "민주당", "지지율", "시장", "도지사", "성남", "서울시", "지방자치",
+            "외교", "안보", "북한", "국방", "군사", "전쟁",
+        ],
+    },
+    "society_issue": {
+        "label": "⚖️ 사회·사건",
+        "short_label": "사회·사건",
+        "news_hint": "사회 사건 사고 법원 경찰 검찰 교육 교권",
+        "keywords": [
+            "사회", "사건", "사고", "경찰", "검찰", "법원", "구속", "수사", "재판", "소송", "시위",
+            "집회", "교사", "교권", "학교", "아동학대", "교육청", "화재", "범죄", "논란",
+        ],
+    },
+    "health_medical": {
+        "label": "🩺 건강·의료",
+        "short_label": "건강·의료",
+        "news_hint": "건강 의료 병원 질병 백신 식품 안전",
+        "keywords": [
+            "건강", "의료", "병원", "의사", "간호사", "질병", "감염", "백신", "암", "혈액암",
+            "수술", "비만", "다이어트", "식품", "의약품", "치료", "환자", "응급실",
+        ],
+    },
+    "entertainment_culture": {
+        "label": "🎬 연예·문화",
+        "short_label": "연예·문화",
+        "news_hint": "연예 방송 드라마 예능 영화 문화",
+        "keywords": [
+            "연예", "방송", "드라마", "예능", "영화", "가수", "배우", "아이돌", "종영", "최종회",
+            "신하균", "오정세", "허성태", "김상경", "유재석", "박영진", "허경환", "강호동", "장성규",
+            "놀면뭐하니", "놀뭐", "아형", "라디오", "오십프로",
+        ],
+    },
+    "sports": {
+        "label": "⚽ 스포츠",
+        "short_label": "스포츠",
+        "news_hint": "스포츠 야구 축구 농구 배구 골프 경기",
+        "keywords": [
+            "스포츠", "야구", "축구", "농구", "배구", "골프", "테니스", "체조", "도마", "금메달",
+            "KBO", "LG", "롯데", "KIA", "두산", "키움", "NC", "오스틴", "오스틴딘", "이승우",
+            "류승민", "여서정", "만루포", "선수", "감독", "월드컵", "아시아선수권",
+        ],
+    },
+    "global_issue": {
+        "label": "🌐 국제",
+        "short_label": "국제",
+        "news_hint": "국제 일본 중국 미국 중동 지진 외신",
+        "keywords": [
+            "국제", "일본", "중국", "미국", "캐나다", "중동", "이란", "이스라엘", "호르무즈", "후지산",
+            "지진", "화산", "태풍", "엔화", "달러", "관세", "수출규제", "전쟁", "외신", "BYD", "비야디",
+        ],
+    },
     "other": {
         "label": "📰 기타",
         "short_label": "기타",
@@ -186,6 +244,21 @@ def _parse_category_filter(value: str) -> list[str]:
         "생활": "living_policy",
         "교육": "education",
         "날씨": "weather_safety",
+        "시사": "politics_current_affairs",
+        "정치": "politics_current_affairs",
+        "사회": "society_issue",
+        "사건": "society_issue",
+        "건강": "health_medical",
+        "의료": "health_medical",
+        "연예": "entertainment_culture",
+        "문화": "entertainment_culture",
+        "방송": "entertainment_culture",
+        "스포츠": "sports",
+        "야구": "sports",
+        "축구": "sports",
+        "농구": "sports",
+        "국제": "global_issue",
+        "해외": "global_issue",
         "기타": "other",
     }
 
@@ -229,6 +302,21 @@ def _classify_keyword(keyword: str) -> str:
             best_category = category_id
 
     return best_category
+
+
+
+def _classify_keyword_with_context(keyword: str, news: list[dict] | None = None, fallback: str = "other") -> str:
+    """키워드뿐 아니라 근거 기사 제목/매체명을 함께 보고 카테고리를 보정합니다.
+
+    Google Trends 키워드는 인명/작품명처럼 단어만으로는 분류가 어렵습니다.
+    예: 오스틴 딘 → 기사 제목을 보면 스포츠, 오십프로 → 연예·문화.
+    """
+    parts = [str(keyword or "")]
+    for article in news or []:
+        parts.append(str(article.get("title") or ""))
+        parts.append(str(article.get("source") or ""))
+    classified = _classify_keyword(" ".join(parts))
+    return classified if classified != "other" else (fallback or "other")
 
 
 
@@ -449,6 +537,8 @@ def _build_idea_digest(keywords: pd.DataFrame, max_items: int, links_per_topic: 
             category_hint=_category_news_hint(category_id),
             lookback_hours=lookback_hours,
         )
+        # 키워드 단독 분류가 기타로 떨어지는 문제를 근거 기사 제목으로 보정합니다.
+        category_id = _classify_keyword_with_context(keyword, news, fallback=category_id)
         approx_traffic = _to_int(row.get("approx_traffic_int", row.get("approx_traffic", 0)))
         base_score = _to_int(row.get("score", 0))
 
@@ -708,37 +798,99 @@ def _select_article_items(items: list[dict], count: int) -> list[dict]:
 
 
 
-def _news_links_html(news: list[dict], limit: int | None = None) -> str:
-    """근거자료 목록을 텔레그램에서 보기 좋게 변환합니다.
+def _select_hot_issue_items(items: list[dict], count: int) -> list[dict]:
+    """Daily HOT Issue TOP을 카테고리별 1~2개씩 균형 있게 선정합니다.
 
-    변경 사항:
-    - '링크1~링크N' 라벨을 표시하지 않습니다.
-    - 실제 URL이 있으면 기사 제목 자체를 클릭 링크로 만듭니다.
-    - URL이 없거나 잘못된 값이면 링크 없이 기사 제목만 표시합니다.
+    사용자가 보는 HOT Issue 리포트는 단순 전체 점수 TOP 10보다
+    경제/금융·주식·시사·사회·연예·건강·스포츠 등 카테고리가 적절히 섞이는 편이 좋습니다.
+    기본값은 카테고리당 최대 2개이며, 기타는 최대 1개만 허용합니다.
     """
+    count = max(0, int(count or 0))
+    if count <= 0 or not items:
+        return []
+
+    ranked = sorted(items, key=_rank_sort_key, reverse=True)
+    if not _env_true("HOT_ISSUE_CATEGORY_BALANCED", "true"):
+        return ranked[:count]
+
+    per_category_max = max(1, _safe_int_env("HOT_ISSUE_PER_CATEGORY_MAX", 2))
+    other_max = max(0, _safe_int_env("HOT_ISSUE_OTHER_MAX", 1))
+
+    buckets: dict[str, list[dict]] = OrderedDict()
+    for item in ranked:
+        category_id = str(item.get("category_id") or "other")
+        buckets.setdefault(category_id, []).append(item)
+
+    category_order = sorted(
+        buckets.keys(),
+        key=lambda c: _rank_sort_key(buckets[c][0]) if buckets[c] else (0, 0, 0, 0, 0, 0),
+        reverse=True,
+    )
+
+    selected: list[dict] = []
+    selected_keys = set()
+    category_selected_count: dict[str, int] = {}
+
+    def item_key(item: dict) -> str:
+        return str(item.get("keyword") or id(item))
+
+    for round_idx in range(per_category_max):
+        for category_id in category_order:
+            if len(selected) >= count:
+                break
+            if category_id == "other" and category_selected_count.get(category_id, 0) >= other_max:
+                continue
+            bucket = buckets.get(category_id) or []
+            if len(bucket) <= round_idx:
+                continue
+            item = bucket[round_idx]
+            key = item_key(item)
+            if key in selected_keys:
+                continue
+            selected.append(item)
+            selected_keys.add(key)
+            category_selected_count[category_id] = category_selected_count.get(category_id, 0) + 1
+        if len(selected) >= count:
+            break
+
+    # 카테고리 제한 때문에 목표 개수보다 부족하면 전체 랭킹에서 보충합니다.
+    for item in ranked:
+        if len(selected) >= count:
+            break
+        key = item_key(item)
+        if key in selected_keys:
+            continue
+        selected.append(item)
+        selected_keys.add(key)
+
+    return selected[:count]
+
+
+
+def _news_links_html(news: list[dict], limit: int | None = None) -> str:
+    """뉴스 링크를 링크1~링크N 라벨로 변환합니다."""
     if not news:
-        return "  - 확인 가능한 근거자료가 없습니다."
+        return "지정 기간 기준 RSS에서 확인된 링크가 없습니다."
 
     parts = []
     selected = news[:limit] if limit else news
     for n, article in enumerate(selected, 1):
         title = html_escape(article.get("title") or "기사 제목 없음")
-        media = html_escape(article.get("source") or article.get("source_name") or article.get("press") or "")
-        published = html_escape(article.get("published") or article.get("published_at") or article.get("pubDate") or "")
-        url = str(article.get("url") or article.get("link") or article.get("originallink") or "").strip()
-
+        media = html_escape(article.get("source") or "")
+        published = html_escape(article.get("published") or "")
+        url = str(article.get("url") or "").strip()
         meta = " · ".join(x for x in [media, published] if x)
-
+        link_label = f"링크{n}"
         if url.startswith(("http://", "https://")):
-            title_text = f'<a href="{_html_attr(url)}">{title}</a>'
+            link_text = f'<a href="{_html_attr(url)}">{link_label}</a>'
         else:
-            title_text = title
-
+            link_text = link_label
         if meta:
-            parts.append(f"  {n}) {title_text} ({meta})")
+            parts.append(f"  {n}) {title} ({meta}) / {link_text}")
         else:
-            parts.append(f"  {n}) {title_text}")
+            parts.append(f"  {n}) {title} / {link_text}")
     return "\n".join(parts)
+
 
 
 def _allowed_label(allowed_categories: list[str]) -> str:
@@ -761,39 +913,59 @@ def _daily_digest_to_telegram_text(
 ) -> str:
     """최종 운영용 텔레그램 리포트입니다.
 
-    공개 리포트에서는 내부 로그성 정보를 숨깁니다.
-    숨김 처리:
-    - 관심도
-    - Google 조회수
-    - 네이버 신호
-    - DataLab
-    - 수집경로
-    - 작성각도
-    - 자동 대체 검색 로그
-
-    핫이슈 제목 바로 아래에 근거자료가 표시됩니다.
+    구성:
+    1) 오늘의 핫이슈: 전체 후보를 조회수 많은 순으로 정리
+    2) 오늘의 카드뉴스: 카드뉴스 제작 추천 항목
+    3) 오늘의 작성글: 블로그/워드프레스 작성 추천 항목
     """
+    evidence_items_count = sum(1 for item in items if len(item.get("news") or []) > 0)
     lines = [
-        "🔥 <b>오늘의 핫이슈 TOP 10</b>",
+        "🔥 <b>오늘의 핫이슈 · 카드뉴스 · 작성글 후보</b>",
+        f"분야 필터: <b>{html_escape(_allowed_label(allowed_categories))}</b>",
+        f"수집 기준: <b>최근 {int(lookback_hours)}시간 이내</b>",
+        "정렬 기준: <b>카테고리 균형 + 종합 관심도 순</b> = 카테고리별 1~2개 우선 + Google Trends 조회수 + 네이버 뉴스량 + 네이버 DataLab 상대지수",
+        f"근거자료 포함: <b>{evidence_items_count}/{len(items)}</b>개 항목",
+        "근거자료는 <b>네이버 뉴스 우선</b>, 부족하면 Google News로 보완합니다.",
+        "기사 URL은 길게 노출하지 않고 <b>링크1~링크5</b> 라벨로 표시합니다.",
     ]
 
+    if fallback_info:
+        lines.append("\n🔎 <b>자동 대체 검색 로그</b>")
+        for idx, stage in enumerate(fallback_info, 1):
+            label = html_escape(stage.get("label", ""))
+            item_count = int(stage.get("item_count", 0) or 0)
+            evidence_count = int(stage.get("evidence_count", 0) or 0)
+            used = " → <b>사용</b>" if stage.get("used") else ""
+            lines.append(f"{idx}) {label}: 후보 {item_count}개 / 근거 포함 {evidence_count}개{used}")
+
     if not items:
-        lines.append("\n오늘 표시할 핫이슈가 없습니다.")
+        lines.append("\n수집된 작성 후보가 없습니다. 카테고리 필터 또는 선택 주제를 확인해주세요.")
         return "\n".join(lines)
 
     ranked_items = sorted(items, key=_rank_sort_key, reverse=True)
-    hot_items = ranked_items[: max(0, hot_issue_count)]
+    hot_items = _select_hot_issue_items(ranked_items, hot_issue_count)
     card_items = _select_card_news_items(hot_items, card_news_count)
     article_items = _select_article_items(hot_items, article_count)
 
-    lines = [
-        f"🔥 <b>오늘의 핫이슈 TOP {len(hot_items)}</b>",
-    ]
-
+    lines.append("\n🔥 <b>오늘의 핫이슈 TOP {}</b>".format(len(hot_items)))
     for idx, item in enumerate(hot_items, 1):
         keyword = html_escape(item.get("keyword") or "")
         category = html_escape(item.get("category_label") or "")
+        traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
+        interest = html_escape(item.get("interest_label") or _interest_label(item.get("composite_score")))
+        naver_news_count = _to_int(item.get("naver_news_count", 0))
+        datalab_score = float(item.get("naver_datalab_score", 0) or 0)
+        source = html_escape(item.get("source") or "")
+        evidence = html_escape(item.get("evidence_strength") or "")
+        angle = html_escape(item.get("angle") or "")
         lines.append(f"\n<b>{idx}. [{category}] {keyword}</b>")
+        lines.append(f"관심도: <b>{interest}</b> / Google 조회수: <b>{traffic}</b> / 근거강도: {evidence}")
+        if naver_news_count or datalab_score:
+            lines.append(f"네이버 신호: 최근뉴스 {naver_news_count}건 / DataLab {datalab_score:.1f}")
+        if source:
+            lines.append(f"수집경로: {source}")
+        if angle:
+            lines.append(f"작성각도: {angle}")
         lines.append("근거자료:")
         lines.append(_news_links_html(item.get("news") or []))
 
@@ -803,10 +975,11 @@ def _daily_digest_to_telegram_text(
     for idx, item in enumerate(card_items, 1):
         keyword = html_escape(item.get("keyword") or "")
         ref_rank = hot_items.index(item) + 1 if item in hot_items else item.get("rank", "-")
+        traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
         angle = html_escape(item.get("card_news_angle") or "")
         lines.append(f"\n<b>{idx}. #{ref_rank} {keyword}</b>")
-        if angle:
-            lines.append(f"구성방향: {angle}")
+        lines.append(f"선정이유: 관심도 {html_escape(item.get('interest_label') or _interest_label(item.get('composite_score')))}, Google 조회수 {traffic}, 기사근거 {len(item.get('news') or [])}개")
+        lines.append(f"구성방향: {angle}")
 
     lines.append("\n✍️ <b>오늘의 작성글 추천</b>")
     if not article_items:
@@ -814,15 +987,18 @@ def _daily_digest_to_telegram_text(
     for idx, item in enumerate(article_items, 1):
         keyword = html_escape(item.get("keyword") or "")
         ref_rank = hot_items.index(item) + 1 if item in hot_items else item.get("rank", "-")
+        traffic = html_escape(item.get("traffic_label") or _traffic_label(item.get("approx_traffic")))
         angle = html_escape(item.get("article_angle") or "")
         lines.append(f"\n<b>{idx}. #{ref_rank} {keyword}</b>")
-        if angle:
-            lines.append(f"글방향: {angle}")
+        lines.append(f"선정이유: 검색 유입 가능성 + 관심도 {html_escape(item.get('interest_label') or _interest_label(item.get('composite_score')))} + 근거 기사 {len(item.get('news') or [])}개")
+        lines.append(f"글방향: {angle}")
 
-    lines.append("\n📌 <b>확인 메모</b>")
-    lines.append("각 근거자료는 원문 확인용입니다.")
-    lines.append("금융·정책 이슈는 발행 전 공식 자료를 한 번 더 확인하세요.")
+    lines.append("\n📌 <b>운영 메모</b>")
+    lines.append(f"Google Trends approx traffic은 조회수 참고값으로 사용하고, 네이버 뉴스량/DataLab 상대지수로 순위를 보정합니다.")
+    lines.append(f"근거자료는 네이버 뉴스 검색 API를 우선 사용하고 부족하면 Google News RSS 최근 {int(lookback_hours)}시간 기준으로 보완합니다.")
+    lines.append("seed 키워드는 기본 제외됩니다. 필요할 때만 include_seed_keywords=true로 켜세요.")
     return "\n".join(lines)
+
 
 
 def _ideas_to_telegram_text(items: list[dict], allowed_categories: list[str]) -> str:
@@ -904,12 +1080,14 @@ def main():
             encoding="utf-8",
         )
         flat_rows = []
-        card_keywords = {item.get("keyword") for item in _select_card_news_items(items[:hot_issue_count], card_news_count)}
-        article_keywords = {item.get("keyword") for item in _select_article_items(items[:hot_issue_count], article_count)}
+        selected_hot_items = _select_hot_issue_items(items, hot_issue_count)
+        hot_keywords = {item.get("keyword") for item in selected_hot_items}
+        card_keywords = {item.get("keyword") for item in _select_card_news_items(selected_hot_items, card_news_count)}
+        article_keywords = {item.get("keyword") for item in _select_article_items(selected_hot_items, article_count)}
         for rank, item in enumerate(items, 1):
             news = item.get("news") or []
             uses = []
-            if rank <= hot_issue_count:
+            if item.get("keyword") in hot_keywords:
                 uses.append("오늘의 핫이슈")
             if item.get("keyword") in card_keywords:
                 uses.append("오늘의 카드뉴스")

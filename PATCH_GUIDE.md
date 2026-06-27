@@ -1,59 +1,69 @@
-# v1.24 헤드라인 List 기준 카드뉴스 패치
+# v1.25 적용 가이드
 
-## 문제
+## 핵심 변경
 
-v1.23 카드뉴스는 기존 헤드라인 뉴스 List를 기준으로 만든 것이 아니라, 별도 뉴스 후보를 다시 수집/군집화해서 만들었습니다.
+이번 패치는 두 가지를 동시에 수정합니다.
 
-그래서 사용자가 받은 헤드라인 목록과 카드뉴스 내용이 달라질 수 있었습니다.
+1. **Daily Hot Issue TOP 10을 카테고리별 1~2개씩 균형 선정**
+2. **Morning Headline Cardnews를 Daily Hot Issue TOP Item 기준으로 생성**
 
-## 해결
-
-v1.24에서는 아래 구조로 변경합니다.
-
-```text
-1. 헤드라인 뉴스 List를 먼저 생성
-2. 각 헤드라인을 anchor로 고정
-3. anchor별 유사 기사 3개 검색
-4. 해당 3개 기사 기반 3줄 요약
-5. 카드뉴스 7장 생성
-6. 원문 링크 텍스트 전송
-```
-
-## 교체/추가할 파일
+## 교체/추가 파일
 
 ```text
-app/services/headline_anchor_service.py
-app/services/headline_cardnews_summary_service.py
-app/jobs/send_headline_cardnews_report.py
+main.py
+.github/workflows/daily-adsense-seo.yml
 .github/workflows/morning-headline-news.yml
-docs/morning_headline_anchor_cardnews_v1_24.md
+app/services/daily_hotissue_source.py
+app/services/headline_cardnews_summary_service.py
+app/services/headline_cardnews_render_service.py
+app/services/telegram_album_service.py
+app/jobs/send_headline_cardnews_report.py
+docs/daily_hotissue_category_anchor_cardnews_v1_25.md
 ```
 
-> v1.23에서 추가한 아래 파일은 그대로 사용합니다.
->
-> ```text
-> app/services/headline_cardnews_render_service.py
-> app/services/telegram_album_service.py
-> ```
+## Daily 리포트 개선
 
-## 수동 테스트
+기존에는 전체 점수 TOP 10만 사용해 로또/스포츠/연예 등 특정 분야가 쏠릴 수 있었습니다.
+이제 기본값은 아래와 같습니다.
 
 ```text
-Actions
-→ Morning Headline News Report
-→ Run workflow
+HOT_ISSUE_CATEGORY_BALANCED=true
+HOT_ISSUE_PER_CATEGORY_MAX=2
+HOT_ISSUE_OTHER_MAX=1
 ```
 
-## 반드시 확인할 로그
+즉, 카테고리별 상위 항목을 1~2개씩 뽑고, 기타는 최대 1개만 노출합니다.
+
+## Morning 리포트 개선
+
+기존 Morning Headline은 별도 뉴스 수집 결과를 사용했습니다.
+이제는 Daily Hot Issue와 같은 수집/분류/균형선정 함수를 호출합니다.
 
 ```text
-[anchor headlines]
-[anchor groups]
-[anchor-cardnews result]
+Daily HOT Issue TOP Item
+→ Morning Headline Cardnews
 ```
 
-여기서 `[anchor headlines]`가 카드뉴스 생성 기준입니다.
+## 테스트 순서
 
-## 운영 검증 기준
+1. `Daily AdSense SEO Hot Issue Report` 수동 실행
+2. 텔레그램 리포트의 `카테고리 구성` 확인
+3. `Morning Headline News Report` 수동 실행
+4. 카드뉴스의 이슈가 Daily HOT Issue TOP Item 기준인지 확인
 
-카드뉴스 2~6페이지의 제목이 `[anchor headlines]` 순서와 같은 흐름이면 정상입니다.
+## 확인 로그
+
+Daily:
+
+```text
+오늘의 핫이슈 TOP 10
+카테고리 구성: ...
+```
+
+Morning:
+
+```text
+[daily-hotissue-cardnews result]
+category_mix
+issues_preview
+```
