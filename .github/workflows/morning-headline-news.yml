@@ -17,11 +17,13 @@ jobs:
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      HEADLINE_NEWS_COUNT: 10
+      HEADLINE_NEWS_COUNT: 8
       HEADLINE_LOOKBACK_HOURS: 24
       HEADLINE_FALLBACK_LOOKBACK_HOURS: 48
       HEADLINE_RELAXED_LOOKBACK_HOURS: 72
       HEADLINE_SEND_TEXT: "true"
+      HEADLINE_SEND_AS_DOCUMENT: "false"
+      HEADLINE_IMAGE_SCALE: 2
 
     steps:
       - name: Checkout
@@ -41,13 +43,14 @@ jobs:
       - name: Install Korean fonts
         run: |
           sudo apt-get update
-          sudo apt-get install -y fonts-nanum
+          sudo apt-get install -y fonts-nanum fonts-noto-cjk
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests feedparser pillow python-dotenv google-generativeai
+          pip install requests feedparser pillow python-dotenv google-generativeai playwright
+          python -m playwright install --with-deps chromium
 
-      - name: Send morning headline image report
+      - name: Send morning headline premium image report
         run: |
           python -m app.jobs.send_headline_news_report
