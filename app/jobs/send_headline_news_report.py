@@ -22,15 +22,27 @@ GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid
 TELEGRAM_API_BASE = "https://api.telegram.org/bot"
 
 HEADLINE_QUERIES = [
-    ("경제", "경제 정책 물가 유가 환율 오늘 최신뉴스"),
-    ("증시", "코스피 코스닥 환율 증시 오늘 최신뉴스"),
-    ("정치", "정부 국회 대통령 선관위 오늘 최신뉴스"),
-    ("사회", "사건 사고 법원 경찰 사회 오늘 최신뉴스"),
-    ("국제", "국제 외교 중동 미국 중국 오늘 최신뉴스"),
-    ("산업", "반도체 조선 자동차 배터리 산업 오늘 최신뉴스"),
-    ("IT", "AI 네이버 카카오 통신 스마트폰 오늘 최신뉴스"),
-    ("생활", "날씨 폭염 오존 교통 소비자 오늘 최신뉴스"),
-    ("스포츠", "축구 야구 월드컵 스포츠 오늘 최신뉴스"),
+    ("경제", "경제 정책 물가 유가 환율 최신뉴스"),
+    ("증시", "코스피 코스닥 환율 증시 최신뉴스"),
+    ("정치", "정부 국회 대통령 선관위 정치 최신뉴스"),
+    ("사회", "사건 사고 법원 경찰 사회 최신뉴스"),
+    ("국제", "국제 외교 중동 미국 중국 최신뉴스"),
+    ("산업", "반도체 조선 자동차 배터리 산업 최신뉴스"),
+    ("IT", "AI 네이버 카카오 통신 스마트폰 최신뉴스"),
+    ("생활", "날씨 폭염 오존 교통 소비자 최신뉴스"),
+    ("스포츠", "축구 야구 월드컵 스포츠 최신뉴스"),
+]
+
+DATELESS_FALLBACK_QUERIES = [
+    ("경제", "경제 뉴스"),
+    ("증시", "증시 뉴스"),
+    ("정치", "정치 뉴스"),
+    ("사회", "사회 뉴스"),
+    ("국제", "국제 뉴스"),
+    ("산업", "산업 뉴스"),
+    ("IT", "IT 뉴스"),
+    ("생활", "날씨 뉴스"),
+    ("스포츠", "스포츠 뉴스"),
 ]
 
 ROUNDUP_TITLE_PATTERNS = [
@@ -140,10 +152,22 @@ def is_fresh(published_at: datetime | None, cutoff: datetime) -> bool:
     return published_at >= cutoff
 
 
+def is_obviously_old(published_at: datetime | None, hard_cutoff: datetime) -> bool:
+    if published_at is None:
+        return False
+    return published_at < hard_cutoff
+
+
+def with_today_query(query: str) -> str:
+    now = datetime.now(KST)
+    return f'{now:%Y년 %-m월 %-d일} {query}' if os.name != "nt" else f'{now.year}년 {now.month}월 {now.day}일 {query}'
+
+
 def fetch_naver_news(category: str, query: str, display: int = 30) -> list[dict[str, Any]]:
     client_id = env("NAVER_CLIENT_ID")
     client_secret = env("NAVER_CLIENT_SECRET")
     if not client_id or not client_secret:
+        print("[naver] missing NAVER_CLIENT_ID/NAVER_CLIENT_SECRET")
         return []
 
     headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
@@ -216,13 +240,11 @@ def fetch_google_news(category: str, query: str, limit: int = 15) -> list[dict[s
 
 
 def _dedupe_and_rank(items: list[dict[str, Any]], max_items: int) -> list[dict[str, Any]]:
-    now = datetime.now(KST)
     seen = set()
     deduped = []
     category_count: dict[str, int] = {}
 
     def score(item: dict[str, Any]):
-        # 완성된 제목, description 보유, Naver 우선, 최신순
         published = item.get("published_at") or datetime(1970, 1, 1, tzinfo=KST)
         return (
             1 if item.get("needs_rewrite") else 0,
@@ -253,7 +275,7 @@ def _dedupe_and_rank(items: list[dict[str, Any]], max_items: int) -> list[dict[s
 
     if len(deduped) < max_items:
         for item in sorted(items, key=score):
-            key = title_key(item["title"])
+            key = title_key(item.get("title", ""))
             if not key or key in seen:
                 continue
             seen.add(key)
@@ -264,52 +286,86 @@ def _dedupe_and_rank(items: list[dict[str, Any]], max_items: int) -> list[dict[s
     return deduped[:max_items]
 
 
-def collect_all_candidates() -> list[dict[str, Any]]:
+def collect_candidates(query_set: list[tuple[str, str]], *, dated: bool = False) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
 
-    for category, query in HEADLINE_QUERIES:
-        candidates.extend(fetch_naver_news(category, query, display=30))
+    for category, query in query_set:
+        q = with_today_query(query) if dated else query
+        candidates.extend(fetch_naver_news(category, q, display=30))
         time.sleep(0.15)
 
-    # Naver 결과가 너무 적을 때만 Google 보조
-    if len(candidates) < 30:
-        for category, query in HEADLINE_QUERIES:
-            candidates.extend(fetch_google_news(category, query, limit=12))
+    if len(candidates) < 20:
+        for category, query in query_set:
+            q = with_today_query(query) if dated else query
+            candidates.extend(fetch_google_news(category, q, limit=12))
             time.sleep(0.1)
 
     return candidates
 
 
-def collect_headlines(max_items: int = 10, lookback_hours: int = 24, fallback_hours: int = 48) -> list[dict[str, Any]]:
+def collect_headlines(max_items: int = 10, lookback_hours: int = 24, fallback_hours: int = 48, relaxed_hours: int = 72) -> list[dict[str, Any]]:
     """
-    v1.20 핵심:
-    - 24시간 이내 뉴스만 우선 사용
-    - 부족하면 48시간까지 확장
-    - 48시간보다 오래된 뉴스는 절대 사용하지 않음
-    - 부족하면 부족한 개수 그대로 보냄
+    v1.21:
+    - 24h → 48h → 날짜포함 재검색 → 72h relaxed 순서로 시도
+    - 그래도 없으면 날짜 불명 최신 상단 후보를 제한적으로 사용
+    - 명백히 오래된 날짜는 제외
+    - workflow 자체는 실패시키지 않음
     """
     now = datetime.now(KST)
-    candidates = collect_all_candidates()
-
     primary_cutoff = now - timedelta(hours=lookback_hours)
     fallback_cutoff = now - timedelta(hours=fallback_hours)
+    relaxed_cutoff = now - timedelta(hours=relaxed_hours)
+
+    candidates = collect_candidates(HEADLINE_QUERIES, dated=False)
 
     primary = [item for item in candidates if is_fresh(item.get("published_at"), primary_cutoff)]
     print(f"[headline freshness] primary {lookback_hours}h candidates:", len(primary))
-
     selected = _dedupe_and_rank(primary, max_items=max_items)
 
     if len(selected) < max_items:
-        fallback_pool = [
+        fallback = [
             item for item in candidates
             if is_fresh(item.get("published_at"), fallback_cutoff)
             and title_key(item.get("title", "")) not in {title_key(x.get("title", "")) for x in selected}
         ]
-        print(f"[headline freshness] fallback {fallback_hours}h candidates:", len(fallback_pool))
-        selected += _dedupe_and_rank(fallback_pool, max_items=max_items - len(selected))
+        print(f"[headline freshness] fallback {fallback_hours}h candidates:", len(fallback))
+        selected += _dedupe_and_rank(fallback, max_items=max_items - len(selected))
 
-    # 최종 안전 필터: 48시간 초과는 제거
-    selected = [item for item in selected if is_fresh(item.get("published_at"), fallback_cutoff)]
+    if len(selected) < max_items:
+        dated_candidates = collect_candidates(DATELESS_FALLBACK_QUERIES, dated=True)
+        dated_fresh = [
+            item for item in dated_candidates
+            if is_fresh(item.get("published_at"), relaxed_cutoff)
+            and title_key(item.get("title", "")) not in {title_key(x.get("title", "")) for x in selected}
+        ]
+        print("[headline freshness] dated-query relaxed candidates:", len(dated_fresh))
+        selected += _dedupe_and_rank(dated_fresh, max_items=max_items - len(selected))
+
+    if len(selected) < max_items:
+        relaxed = [
+            item for item in candidates
+            if is_fresh(item.get("published_at"), relaxed_cutoff)
+            and title_key(item.get("title", "")) not in {title_key(x.get("title", "")) for x in selected}
+        ]
+        print(f"[headline freshness] relaxed {relaxed_hours}h candidates:", len(relaxed))
+        selected += _dedupe_and_rank(relaxed, max_items=max_items - len(selected))
+
+    if len(selected) < max_items:
+        # 마지막 안전망: 날짜가 없는 후보만 제한 사용. 명백히 오래된 날짜 후보는 사용 금지.
+        undated = [
+            item for item in candidates
+            if item.get("published_at") is None
+            and title_key(item.get("title", "")) not in {title_key(x.get("title", "")) for x in selected}
+        ]
+        print("[headline freshness] undated fallback candidates:", len(undated))
+        selected += _dedupe_and_rank(undated, max_items=max_items - len(selected))
+
+    # 최종 필터: 날짜가 있으면서 72시간보다 오래된 것은 무조건 제외
+    selected = [
+        item for item in selected
+        if not is_obviously_old(item.get("published_at"), relaxed_cutoff)
+    ]
+
     print("[headline selected]", len(selected))
 
     return selected[:max_items]
@@ -543,6 +599,10 @@ def build_text_message(briefs: list[dict[str, Any]]) -> str:
     header = f"{now:%Y년 %m월%d일}({weekday_ko(now)})☀️☀️🌤\n💛 아침 헤드라인 뉴스"
     lines = [header, ""]
 
+    if not briefs:
+        lines.append("최근 헤드라인 후보가 부족해 이미지 리포트를 생성하지 못했습니다.")
+        return "\n".join(lines)
+
     for idx, item in enumerate(briefs, start=1):
         headline = item.get("headline_text") or safe_headline_from_title(item.get("title", ""), item.get("description", ""))
         headline = headline.replace("…", "").replace("...", "").strip()
@@ -582,16 +642,22 @@ def main():
     max_items = int(env("HEADLINE_NEWS_COUNT", "10"))
     lookback_hours = int(env("HEADLINE_LOOKBACK_HOURS", "24"))
     fallback_hours = int(env("HEADLINE_FALLBACK_LOOKBACK_HOURS", "48"))
+    relaxed_hours = int(env("HEADLINE_RELAXED_LOOKBACK_HOURS", "72"))
     send_text_too = env("HEADLINE_SEND_TEXT", "true").lower() == "true"
 
     headlines = collect_headlines(
         max_items=max_items,
         lookback_hours=lookback_hours,
         fallback_hours=fallback_hours,
+        relaxed_hours=relaxed_hours,
     )
 
     if not headlines:
-        raise RuntimeError("최근 24~48시간 이내 헤드라인 후보를 찾지 못했습니다.")
+        msg = build_text_message([])
+        print("[headline empty]")
+        print(msg)
+        send_telegram_message(msg)
+        return
 
     briefs = summarize_with_gemini(headlines)
 
