@@ -20,6 +20,13 @@ def escape_html(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
+def mask_secret(value: str | None, visible: int = 4) -> str:
+    value = value or ""
+    if len(value) <= visible * 2:
+        return "***"
+    return f"{value[:visible]}...{value[-visible:]}"
+
+
 def split_telegram_message(text: str, max_length: int = 3900) -> list[str]:
     if len(text) <= max_length:
         return [text]
@@ -42,6 +49,18 @@ def split_telegram_message(text: str, max_length: int = 3900) -> list[str]:
     return chunks
 
 
+def validate_telegram_env() -> dict[str, Any]:
+    bot_token = _env("TELEGRAM_BOT_TOKEN")
+    chat_id = _env("TELEGRAM_CHAT_ID")
+
+    return {
+        "has_bot_token": bool(bot_token),
+        "has_chat_id": bool(chat_id),
+        "bot_token_masked": mask_secret(bot_token) if bot_token else "",
+        "chat_id_masked": mask_secret(chat_id) if chat_id else "",
+    }
+
+
 def send_telegram_message(
     message: str,
     *,
@@ -49,51 +68,63 @@ def send_telegram_message(
     chat_id: str | None = None,
     parse_mode: str = "HTML",
     disable_web_page_preview: bool = True,
-    fail_silently: bool = True,
+    fail_silently: bool = False,
 ) -> dict[str, Any]:
     bot_token = bot_token or _env("TELEGRAM_BOT_TOKEN")
     chat_id = chat_id or _env("TELEGRAM_CHAT_ID")
 
-    if not bot_token or not chat_id:
-        result = {
-            "ok": False,
-            "skipped": True,
-            "reason": "TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 없습니다.",
-        }
+    if not bot_token:
+        message_text = "TELEGRAM_BOT_TOKEN이 설정되지 않았습니다."
         if fail_silently:
-            return result
-        raise RuntimeError(result["reason"])
+            return {"ok": False, "skipped": True, "reason": message_text}
+        raise RuntimeError(message_text)
+
+    if not chat_id:
+        message_text = "TELEGRAM_CHAT_ID가 설정되지 않았습니다."
+        if fail_silently:
+            return {"ok": False, "skipped": True, "reason": message_text}
+        raise RuntimeError(message_text)
 
     url = f"{TELEGRAM_API_BASE}{bot_token}/sendMessage"
     results = []
 
-    for chunk in split_telegram_message(message):
+    for index, chunk in enumerate(split_telegram_message(message), start=1):
         payload = {
             "chat_id": chat_id,
             "text": chunk,
             "parse_mode": parse_mode,
             "disable_web_page_preview": disable_web_page_preview,
         }
+
         response = requests.post(url, json=payload, timeout=30)
 
         try:
             data = response.json()
         except Exception:
-            data = {"ok": False, "description": response.text}
+            data = {"ok": False, "description": response.text, "status_code": response.status_code}
 
         if not response.ok or not data.get("ok"):
+            error_payload = {
+                "ok": False,
+                "chunk_index": index,
+                "status_code": response.status_code,
+                "telegram_response": data,
+                "chat_id_masked": mask_secret(chat_id),
+            }
+
             if fail_silently:
-                return {
-                    "ok": False,
-                    "skipped": False,
-                    "reason": data,
-                    "sent_parts": len(results),
-                }
-            raise RuntimeError(f"Telegram 전송 실패: {data}")
+                return error_payload
+
+            raise RuntimeError(f"Telegram 전송 실패: {error_payload}")
 
         results.append(data)
 
-    return {"ok": True, "sent_parts": len(results), "results": results}
+    return {
+        "ok": True,
+        "sent_parts": len(results),
+        "chat_id_masked": mask_secret(chat_id),
+        "results": results,
+    }
 
 
 def _level_label(level: str | None) -> str:
@@ -183,10 +214,11 @@ def send_pipeline_summary_report(
     boost: dict[str, Any] | None,
     keyword_result: dict[str, Any] | None,
     sns_result: dict[str, Any] | None,
+    fail_silently: bool = False,
 ) -> dict[str, Any]:
     message = format_pipeline_summary_report(
         boost=boost,
         keyword_result=keyword_result,
         sns_result=sns_result,
     )
-    return send_telegram_message(message, fail_silently=True)
+    return send_telegram_message(message, fail_silently=fail_silently)

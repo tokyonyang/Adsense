@@ -5,19 +5,13 @@ import json
 from app.services.event_boost_service import get_today_event_boost_config
 from app.services.keyword_service import KeywordService
 from app.services.sns_trend_service import SnsTrendService
-from app.services.telegram_report_service import send_pipeline_summary_report
+from app.services.telegram_report_service import send_pipeline_summary_report, validate_telegram_env
 
 
 def main():
-    """
-    v1.10 자동 파이프라인.
+    print("[telegram env]")
+    print(json.dumps(validate_telegram_env(), ensure_ascii=False, indent=2))
 
-    v1.9:
-    - 경제지표 이벤트일에 키워드/근거자료 수집량 자동 상향
-
-    v1.10:
-    - 이벤트 부스트 결과를 텔레그램 리포트에 함께 표시
-    """
     boost = get_today_event_boost_config(days_before=0, days_after=1)
 
     keyword_result = KeywordService().collect_keywords(
@@ -26,7 +20,7 @@ def main():
         max_keywords=boost.max_keywords,
         seed_keywords=boost.event_keywords,
         news_links_per_topic=boost.news_links_per_topic,
-        run_source="daily_pipeline_v1_10",
+        run_source="daily_pipeline_v1_10_2",
         boost_summary=boost.to_dict(),
     )
 
@@ -51,6 +45,7 @@ def main():
         boost=boost.to_dict(),
         keyword_result=keyword_summary,
         sns_result=sns_summary,
+        fail_silently=False,
     )
 
     result = {
@@ -59,9 +54,8 @@ def main():
         "sns_result": sns_summary,
         "telegram_result": {
             "ok": telegram_result.get("ok"),
-            "skipped": telegram_result.get("skipped", False),
             "sent_parts": telegram_result.get("sent_parts", 0),
-            "reason": telegram_result.get("reason"),
+            "chat_id_masked": telegram_result.get("chat_id_masked"),
         },
     }
 
