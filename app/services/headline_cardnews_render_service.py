@@ -29,32 +29,61 @@ def domain(url: str | None) -> str:
         return "news"
 
 
+def normalize_category(category: str) -> str:
+    category = str(category or "주요").strip()
+    aliases = {
+        "경제": "경제·금융",
+        "증시": "증권·투자",
+        "산업": "산업·기업",
+        "정책": "정책·지원금",
+        "생활": "생활·제도",
+        "정치": "시사·정치",
+        "사회": "사회·사건",
+        "IT": "산업·기업",
+    }
+    return aliases.get(category, category)
+
+
 def cat_color(category: str) -> str:
+    category = normalize_category(category)
     return {
-        "경제": "#f4c542",
-        "증시": "#ff7a45",
-        "정치": "#4d96ff",
-        "사회": "#00c389",
+        "경제·금융": "#f4c542",
+        "증권·투자": "#ff7a45",
+        "산업·기업": "#ffb020",
+        "정책·지원금": "#4d96ff",
+        "부동산·주거금융": "#d6a64f",
+        "생활·제도": "#00b8d9",
         "국제": "#a66bff",
-        "산업": "#ffb020",
-        "생활": "#00b8d9",
-        "IT": "#7a5af8",
+        "시사·정치": "#4d96ff",
+        "사회·사건": "#00c389",
+        "날씨·안전": "#38bdf8",
+        "건강·의료": "#22c55e",
+        "교육·입시": "#f59e0b",
+        "연예·문화": "#ec4899",
         "스포츠": "#22c55e",
-    }.get(str(category), "#f4c542")
+        "기타": "#cbd5e1",
+    }.get(category, "#f4c542")
 
 
 def cat_icon(category: str) -> str:
+    category = normalize_category(category)
     return {
-        "경제": "₩",
-        "증시": "↗",
-        "정치": "🏛",
-        "사회": "⚖",
+        "경제·금융": "₩",
+        "증권·투자": "↗",
+        "산업·기업": "AI",
+        "정책·지원금": "🏛",
+        "부동산·주거금융": "🏠",
+        "생활·제도": "☀",
         "국제": "🌐",
-        "산업": "AI",
-        "생활": "☀",
-        "IT": "AI",
+        "시사·정치": "🏛",
+        "사회·사건": "⚖",
+        "날씨·안전": "☔",
+        "건강·의료": "＋",
+        "교육·입시": "✎",
+        "연예·문화": "★",
         "스포츠": "⚽",
-    }.get(str(category), "•")
+        "기타": "•",
+    }.get(category, "•")
 
 
 def base_css() -> str:

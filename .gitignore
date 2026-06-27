@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Runtime outputs
+reports/
+tmp/
+*.log
+
+# Local env
+.env
+.env.*.local
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
