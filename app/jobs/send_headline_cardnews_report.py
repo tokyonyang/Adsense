@@ -23,13 +23,14 @@ def weekday_ko(dt: datetime) -> str:
 
 def build_link_digest(issues: list[dict], payload: dict) -> str:
     now = datetime.now(KST)
-    categories = payload.get("effective_categories") or []
     lines = [
         f"{now:%Y년 %m월%d일}({weekday_ko(now)})☀️☀️🌤",
         "💛 아침 헤드라인 뉴스 · 원문 링크",
         "",
-        "※ Daily AdSense SEO HOT Issue TOP Item을 기준으로 생성했습니다.",
-        f"수집 기준: 최근 {payload.get('effective_lookback_hours')}시간 / 카드뉴스 기준 이슈 {len(issues)}개",
+        "※ Daily AdSense SEO HOT Issue 편집 엔진 기준으로 생성했습니다.",
+        f"편집 정책: {payload.get('editorial_policy') or payload.get('category_policy') or '-'}",
+        f"슬롯 구성: {payload.get('slot_mix') or '-'}",
+        f"카드뉴스 기준 이슈: {len(issues)}개",
         "",
     ]
 
@@ -48,8 +49,10 @@ def build_link_digest(issues: list[dict], payload: dict) -> str:
 
 
 def main():
-    payload = build_daily_hotissue_payload()
-    hot_items = payload.get("hot_items") or []
+    payload = build_daily_hotissue_payload(prefer_saved=True)
+
+    # v1.28: Morning은 Daily TOP 10 전체가 아니라, Daily 엔진이 선별한 morning_items를 우선 사용합니다.
+    hot_items = payload.get("morning_items") or payload.get("card_items") or payload.get("hot_items") or []
 
     if not hot_items:
         send_text_message("💛 아침 헤드라인 뉴스\n\nDaily HOT Issue 기준 항목이 없어 카드뉴스를 생성하지 못했습니다.")
@@ -62,7 +65,7 @@ def main():
     out_dir = Path("tmp/headline_cardnews")
     image_paths = build_cardnews_pages(issues, output_dir=out_dir)
 
-    caption = "💛 아침 헤드라인 뉴스\nDaily HOT Issue 기준으로 유사 기사 3건씩 묶어 정리했습니다."
+    caption = "💛 아침 헤드라인 뉴스\nDaily 편집 엔진 기준 핵심 이슈를 카드뉴스로 정리했습니다."
     send_media_group(image_paths, caption=caption)
 
     if env("HEADLINE_SEND_LINK_DIGEST", "true").lower() == "true":
@@ -73,8 +76,17 @@ def main():
         "hot_items": len(hot_items),
         "cardnews_issues": len(issues),
         "pages": len(image_paths),
-        "category_mix": [
-            {"keyword": x.get("keyword"), "category": x.get("category_label"), "interest": x.get("interest_label")}
+        "slot_mix": payload.get("slot_mix"),
+        "category_mix": payload.get("category_mix"),
+        "source_items": [
+            {
+                "keyword": x.get("keyword"),
+                "slot": x.get("slot"),
+                "category": x.get("category"),
+                "editorial_score": x.get("editorial_score"),
+                "adsense_score": x.get("adsense_score"),
+                "noise_score": x.get("noise_score"),
+            }
             for x in hot_items
         ],
         "issues_preview": [

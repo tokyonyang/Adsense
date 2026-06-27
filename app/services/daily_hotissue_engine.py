@@ -5,7 +5,6 @@ import json
 import os
 import re
 import time
-from collections import Counter
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -39,6 +38,11 @@ def env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
 
+def env_bool(name: str, default: bool = False) -> bool:
+    value = env(name, "true" if default else "false").lower()
+    return value in {"1", "true", "yes", "y", "on"}
+
+
 def env_int(name: str, default: int) -> int:
     try:
         return int(env(name, str(default)))
@@ -61,249 +65,6 @@ def parse_csv(value: str, fallback: list[str]) -> list[str]:
 
 
 # ============================================================
-# 카테고리 정책
-# ============================================================
-
-DEFAULT_PRIORITY_CATEGORIES = [
-    "경제·금융",
-    "증권·투자",
-    "산업·기업",
-    "정책·지원금",
-    "부동산·주거금융",
-    "생활·제도",
-    "국제",
-]
-
-DEFAULT_SECONDARY_CATEGORIES = [
-    "시사·정치",
-    "사회·사건",
-    "날씨·안전",
-    "건강·의료",
-    "교육·입시",
-]
-
-DEFAULT_LOW_PRIORITY_CATEGORIES = [
-    "연예·문화",
-    "스포츠",
-    "기타",
-]
-
-
-def category_policy_from_env() -> dict[str, Any]:
-    return {
-        "mode": env("HOT_ISSUE_CATEGORY_MODE", "finance_first").lower(),
-        "priority_categories": parse_csv(
-            env("HOT_ISSUE_PRIORITY_CATEGORIES"),
-            DEFAULT_PRIORITY_CATEGORIES,
-        ),
-        "secondary_categories": parse_csv(
-            env("HOT_ISSUE_SECONDARY_CATEGORIES"),
-            DEFAULT_SECONDARY_CATEGORIES,
-        ),
-        "low_priority_categories": parse_csv(
-            env("HOT_ISSUE_LOW_PRIORITY_CATEGORIES"),
-            DEFAULT_LOW_PRIORITY_CATEGORIES,
-        ),
-        "top_n": env_int("HOT_ISSUE_TOP_N", DEFAULT_TOP_N),
-        "priority_min": env_int("HOT_ISSUE_PRIORITY_MIN", 6),
-        "priority_max": env_int("HOT_ISSUE_PRIORITY_MAX", 8),
-        "secondary_max": env_int("HOT_ISSUE_SECONDARY_MAX", 3),
-        "low_priority_max": env_int("HOT_ISSUE_LOW_PRIORITY_MAX", 2),
-        "other_max": env_int("HOT_ISSUE_OTHER_MAX", 1),
-        "per_category_max": env_int("HOT_ISSUE_PER_CATEGORY_MAX", 2),
-        "priority_per_category_max": env_int("HOT_ISSUE_PRIORITY_PER_CATEGORY_MAX", 3),
-    }
-
-
-def item_category(item: dict[str, Any]) -> str:
-    return str(item.get("category") or "기타").strip() or "기타"
-
-
-def item_score(item: dict[str, Any]) -> float:
-    try:
-        return float(item.get("score") or 0)
-    except Exception:
-        return 0.0
-
-
-def sort_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(items, key=lambda x: item_score(x), reverse=True)
-
-
-def select_all_score(items: list[dict[str, Any]], policy: dict[str, Any]) -> list[dict[str, Any]]:
-    return sort_items(items)[: policy["top_n"]]
-
-
-def select_balanced_items(items: list[dict[str, Any]], policy: dict[str, Any]) -> list[dict[str, Any]]:
-    top_n = policy["top_n"]
-    per_category_max = policy["per_category_max"]
-    other_max = policy["other_max"]
-
-    selected = []
-    used_ids = set()
-    category_count: dict[str, int] = {}
-
-    for item in sort_items(items):
-        if len(selected) >= top_n:
-            break
-
-        category = item_category(item)
-        if id(item) in used_ids:
-            continue
-        if category == "기타" and category_count.get("기타", 0) >= other_max:
-            continue
-        if category_count.get(category, 0) >= per_category_max:
-            continue
-
-        selected.append(item)
-        used_ids.add(id(item))
-        category_count[category] = category_count.get(category, 0) + 1
-
-    if len(selected) < top_n:
-        for item in sort_items(items):
-            if len(selected) >= top_n:
-                break
-            if id(item) in used_ids:
-                continue
-            selected.append(item)
-            used_ids.add(id(item))
-
-    return selected[:top_n]
-
-
-def select_finance_first_items(items: list[dict[str, Any]], policy: dict[str, Any]) -> list[dict[str, Any]]:
-    top_n = policy["top_n"]
-    priority_min = min(policy["priority_min"], top_n)
-    priority_max = min(policy["priority_max"], top_n)
-    secondary_max = policy["secondary_max"]
-    low_priority_max = policy["low_priority_max"]
-    other_max = policy["other_max"]
-    priority_per_category_max = policy["priority_per_category_max"]
-    per_category_max = policy["per_category_max"]
-
-    priority_set = set(policy["priority_categories"])
-    secondary_set = set(policy["secondary_categories"])
-    low_set = set(policy["low_priority_categories"])
-
-    selected = []
-    used_ids = set()
-    category_count: dict[str, int] = {}
-    group_count = {"priority": 0, "secondary": 0, "low": 0}
-
-    def can_add(item: dict[str, Any], stage: str) -> bool:
-        category = item_category(item)
-
-        if id(item) in used_ids:
-            return False
-
-        if category == "기타" and category_count.get("기타", 0) >= other_max:
-            return False
-
-        max_for_cat = priority_per_category_max if category in priority_set else per_category_max
-        if category_count.get(category, 0) >= max_for_cat:
-            return False
-
-        if stage == "priority":
-            return category in priority_set and group_count["priority"] < priority_max
-
-        if stage == "secondary":
-            return category in secondary_set and group_count["secondary"] < secondary_max
-
-        if stage == "low":
-            return category in low_set and group_count["low"] < low_priority_max
-
-        return True
-
-    def add(item: dict[str, Any]):
-        category = item_category(item)
-        selected.append(item)
-        used_ids.add(id(item))
-        category_count[category] = category_count.get(category, 0) + 1
-
-        if category in priority_set:
-            group_count["priority"] += 1
-        elif category in secondary_set:
-            group_count["secondary"] += 1
-        else:
-            group_count["low"] += 1
-
-    sorted_all = sort_items(items)
-
-    # 1) 경제/금융 우선 카테고리 최소 확보
-    for item in sorted_all:
-        if len(selected) >= top_n or group_count["priority"] >= priority_min:
-            break
-        if can_add(item, "priority"):
-            add(item)
-
-    # 2) 경제/금융 우선 카테고리 추가 확보
-    for item in sorted_all:
-        if len(selected) >= top_n or group_count["priority"] >= priority_max:
-            break
-        if can_add(item, "priority"):
-            add(item)
-
-    # 3) 보조 카테고리 보충
-    for item in sorted_all:
-        if len(selected) >= top_n:
-            break
-        if can_add(item, "secondary"):
-            add(item)
-
-    # 4) 저우선 카테고리 제한 보충
-    for item in sorted_all:
-        if len(selected) >= top_n:
-            break
-        if can_add(item, "low"):
-            add(item)
-
-    # 5) 그래도 부족하면 전체 점수순 보충
-    for item in sorted_all:
-        if len(selected) >= top_n:
-            break
-        if can_add(item, "any"):
-            add(item)
-
-    return selected[:top_n]
-
-
-def apply_hotissue_category_policy(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    policy = category_policy_from_env()
-    mode = policy["mode"]
-
-    if mode == "all_score":
-        return select_all_score(items, policy)
-
-    if mode == "balanced":
-        return select_balanced_items(items, policy)
-
-    return select_finance_first_items(items, policy)
-
-
-def category_mix_text(items: list[dict[str, Any]]) -> str:
-    counts: dict[str, int] = {}
-    for item in items:
-        category = item_category(item)
-        counts[category] = counts.get(category, 0) + 1
-
-    return " / ".join(
-        f"{category} {count}개"
-        for category, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-    )
-
-
-def policy_debug_text() -> str:
-    p = category_policy_from_env()
-    return (
-        f"모드={p['mode']} · "
-        f"우선={','.join(p['priority_categories'])} · "
-        f"우선최소={p['priority_min']} · "
-        f"저우선최대={p['low_priority_max']} · "
-        f"기타최대={p['other_max']}"
-    )
-
-
-# ============================================================
 # 텍스트 정리
 # ============================================================
 
@@ -321,7 +82,7 @@ def normalize_keyword(text: str) -> str:
     return text.strip(" -·ㆍ|")
 
 
-def short_text(text: str, limit: int = 80) -> str:
+def short_text(text: str, limit: int = 84) -> str:
     text = clean_html(text)
     text = text.replace("...", "…").replace("⋯", "…")
     text = re.sub(r"\s+", " ", text).strip()
@@ -355,29 +116,60 @@ def fmt_date(dt: Any) -> str:
     return "시간불명"
 
 
+def compact_key(text: str) -> str:
+    text = normalize_keyword(text).lower()
+    return re.sub(r"[^0-9a-zA-Z가-힣]", "", text)[:80]
+
+
+def tokenize(text: str) -> set[str]:
+    text = normalize_keyword(text).lower()
+    stop = {
+        "오늘", "뉴스", "속보", "종합", "단독", "기자", "관련", "주요", "오전", "오후",
+        "있는", "없는", "한다", "했다", "위해", "대한", "이번", "최근", "연합뉴스",
+        "네이트", "기준", "통해", "위한", "발표", "확인", "논란",
+    }
+    tokens = []
+    for token in re.findall(r"[가-힣A-Za-z0-9]{2,}", text):
+        if token in stop:
+            continue
+        if len(token) > 16:
+            continue
+        tokens.append(token)
+    return set(tokens)
+
+
+def text_similarity(a: str, b: str) -> float:
+    ta, tb = tokenize(a), tokenize(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / max(1, len(ta | tb))
+
+
 # ============================================================
-# 카테고리 분류
+# 카테고리 / 슬롯
 # ============================================================
 
 CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("경제·금융", [
         "환율", "달러", "원화", "엔화", "금리", "기준금리", "대출", "예금", "은행",
         "금융", "물가", "인플레이션", "소비자물가", "유가", "국제유가", "전기요금",
-        "가스요금", "공공요금", "세금", "관세", "수출", "수입", "무역수지",
+        "가스요금", "공공요금", "세금", "관세", "수출", "수입", "무역수지", "원달러",
     ]),
     ("증권·투자", [
         "코스피", "코스닥", "나스닥", "다우", "s&p", "주가", "증시", "상장",
         "하락", "상승", "급등", "급락", "시가총액", "반도체주", "외국인", "기관",
-        "투자", "ETF", "채권", "비트코인", "가상자산", "암호화폐",
+        "투자", "ETF", "채권", "비트코인", "가상자산", "암호화폐", "차익실현",
     ]),
     ("산업·기업", [
         "삼성전자", "sk하이닉스", "하이닉스", "엔비디아", "테슬라", "현대차", "기아",
         "LG", "네이버", "카카오", "비야디", "BYD", "반도체", "HBM", "AI", "인공지능",
         "배터리", "전기차", "조선", "자동차", "공장", "기업", "산업", "수주", "실적",
+        "앤트로픽", "오픈AI", "구글", "마이크로소프트",
     ]),
     ("정책·지원금", [
         "정부", "지원금", "보조금", "소상공인", "민생", "대책", "정책", "국회",
         "예산", "추경", "복지", "지원", "제도", "개편", "규제", "감세", "청년",
+        "총리", "청문회", "공공요금", "할인", "농축수산",
     ]),
     ("부동산·주거금융", [
         "부동산", "아파트", "전세", "월세", "분양", "청약", "주택", "집값",
@@ -390,6 +182,7 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("시사·정치", [
         "대통령", "총리", "청문회", "장관", "선관위", "국정", "여당", "야당",
         "국민의힘", "민주당", "선거", "정치", "의혹", "특검", "탄핵", "신상진",
+        "지지율",
     ]),
     ("사회·사건", [
         "경찰", "검찰", "법원", "구속", "수사", "재판", "사건", "사고", "범죄",
@@ -414,13 +207,52 @@ CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("스포츠", [
         "야구", "축구", "농구", "배구", "KBO", "MLB", "월드컵", "올림픽", "선수",
         "LG", "롯데", "두산", "KIA", "키움", "NC", "오스틴", "이승우", "류승민",
-        "여서정", "금메달", "도마",
+        "여서정", "금메달", "도마", "만루포",
     ]),
     ("연예·문화", [
         "배우", "가수", "드라마", "영화", "예능", "방송", "연예", "아이돌", "종영",
         "신하균", "오정세", "박영진", "유재석", "허경환", "오십프로", "아형", "놀뭐",
+        "열애설", "결별", "송혜교", "대성",
     ]),
     ("기타", []),
+]
+
+CATEGORY_PRIORITY_ORDER = [
+    "경제·금융",
+    "증권·투자",
+    "산업·기업",
+    "정책·지원금",
+    "부동산·주거금융",
+    "생활·제도",
+    "국제",
+    "날씨·안전",
+    "시사·정치",
+    "사회·사건",
+    "건강·의료",
+    "교육·입시",
+    "스포츠",
+    "연예·문화",
+    "기타",
+]
+
+SLOT_DEFINITIONS = {
+    "경제·금융": ["경제·금융", "부동산·주거금융", "생활·제도"],
+    "증권·투자": ["증권·투자"],
+    "산업·기업": ["산업·기업"],
+    "정책·생활": ["정책·지원금", "생활·제도", "부동산·주거금융"],
+    "국제·안전": ["국제", "날씨·안전"],
+    "사회·시사": ["시사·정치", "사회·사건", "건강·의료", "교육·입시"],
+    "대중관심": ["연예·문화", "스포츠", "기타"],
+}
+
+DEFAULT_SLOT_PLAN = [
+    ("경제·금융", 2),
+    ("증권·투자", 2),
+    ("산업·기업", 2),
+    ("정책·생활", 1),
+    ("국제·안전", 1),
+    ("사회·시사", 1),
+    ("대중관심", 1),
 ]
 
 
@@ -444,17 +276,78 @@ def classify_category(keyword: str, articles: list[dict[str, Any]] | None = None
     if not scores:
         return "기타"
 
-    # 경제/금융 관련 키워드는 동점일 때 우선
-    priority_order = [
-        "경제·금융", "증권·투자", "산업·기업", "정책·지원금", "부동산·주거금융",
-        "생활·제도", "국제", "시사·정치", "사회·사건", "날씨·안전", "건강·의료",
-        "교육·입시", "스포츠", "연예·문화", "기타",
-    ]
-
     return sorted(
         scores.items(),
-        key=lambda x: (-x[1], priority_order.index(x[0]) if x[0] in priority_order else 999),
+        key=lambda x: (-x[1], CATEGORY_PRIORITY_ORDER.index(x[0]) if x[0] in CATEGORY_PRIORITY_ORDER else 999),
     )[0][0]
+
+
+def parse_slot_plan(value: str) -> list[tuple[str, int]]:
+    if not value:
+        return DEFAULT_SLOT_PLAN[:]
+
+    slots: list[tuple[str, int]] = []
+    for part in value.split(","):
+        if not part.strip():
+            continue
+        if ":" not in part:
+            continue
+        name, count = part.split(":", 1)
+        try:
+            n = int(count.strip())
+        except Exception:
+            continue
+        name = name.strip()
+        if name and n > 0:
+            slots.append((name, n))
+
+    return slots or DEFAULT_SLOT_PLAN[:]
+
+
+def slot_plan_from_env() -> list[tuple[str, int]]:
+    return parse_slot_plan(env("HOT_ISSUE_SLOT_PLAN", ""))
+
+
+def item_slot(item: dict[str, Any]) -> str:
+    category = item.get("category") or "기타"
+    for slot, categories in SLOT_DEFINITIONS.items():
+        if category in categories:
+            return slot
+    return "대중관심"
+
+
+def category_mix_text(items: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for item in items:
+        category = item.get("category") or "기타"
+        counts[category] = counts.get(category, 0) + 1
+
+    return " / ".join(
+        f"{category} {count}개"
+        for category, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    )
+
+
+def slot_mix_text(items: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for item in items:
+        slot = item.get("slot") or item_slot(item)
+        counts[slot] = counts.get(slot, 0) + 1
+
+    return " / ".join(
+        f"{slot} {count}개"
+        for slot, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    )
+
+
+def editorial_policy_text() -> str:
+    slot_plan = ", ".join(f"{slot}:{count}" for slot, count in slot_plan_from_env())
+    return (
+        f"모드={env('HOT_ISSUE_EDITORIAL_MODE', 'slot_editorial')} · "
+        f"슬롯={slot_plan} · "
+        f"노이즈제한={env_int('HOT_ISSUE_NOISE_MAX', 1)} · "
+        f"Morning최소점수={env_float('HEADLINE_CARDNEWS_MIN_EDITORIAL_SCORE', 40.0)}"
+    )
 
 
 # ============================================================
@@ -463,21 +356,28 @@ def classify_category(keyword: str, articles: list[dict[str, Any]] | None = None
 
 FINANCE_PRIORITY_SEEDS = [
     "환율",
+    "원달러 환율",
     "코스피",
     "코스닥",
     "금리",
+    "기준금리",
     "물가",
+    "소비자물가",
     "유가",
     "전기요금",
     "가스요금",
+    "공공요금",
     "부동산",
     "전세",
+    "분양",
     "삼성전자",
     "SK하이닉스",
     "반도체",
+    "HBM",
     "엔비디아",
     "테슬라",
     "전기차",
+    "비야디",
     "정부 지원금",
     "소상공인 지원",
     "민생 대책",
@@ -494,6 +394,81 @@ BALANCED_SEEDS = [
     "국제",
     "스포츠",
     "연예",
+]
+
+NOISE_KEYWORDS = [
+    "로또",
+    "당첨번호",
+    "1등",
+    "포토",
+    "포토뉴스",
+    "오늘의 운세",
+    "별자리",
+    "열애설",
+    "결별",
+    "인스타",
+    "셀카",
+    "몸매",
+    "키스",
+    "종영",
+    "만루포",
+    "경기 결과",
+]
+
+ADSENSE_VALUE_KEYWORDS = [
+    "환율",
+    "금리",
+    "물가",
+    "대출",
+    "전세",
+    "월세",
+    "부동산",
+    "전기요금",
+    "가스요금",
+    "공공요금",
+    "지원금",
+    "소상공인",
+    "청년",
+    "정부",
+    "정책",
+    "세금",
+    "보험",
+    "연금",
+    "건강",
+    "의료",
+    "입시",
+    "교육",
+    "주식",
+    "코스피",
+    "코스닥",
+    "반도체",
+    "전기차",
+    "AI",
+    "관세",
+    "유가",
+]
+
+EDITORIAL_IMPORTANCE_KEYWORDS = [
+    "정부",
+    "대책",
+    "동결",
+    "인상",
+    "하락",
+    "상승",
+    "급등",
+    "급락",
+    "위기",
+    "규제",
+    "개편",
+    "청문회",
+    "지진",
+    "전쟁",
+    "관세",
+    "수출",
+    "실적",
+    "공급망",
+    "부담",
+    "영향",
 ]
 
 
@@ -544,8 +519,8 @@ def fetch_naver_news(query: str, display: int = 10) -> list[dict[str, Any]]:
 
     rows = []
     for item in data.get("items", []):
-        title = short_text(clean_html(item.get("title", "")), 120)
-        description = short_text(clean_html(item.get("description", "")), 160)
+        title = short_text(clean_html(item.get("title", "")), 130)
+        description = short_text(clean_html(item.get("description", "")), 180)
         url = item.get("originallink") or item.get("link") or ""
         published_at = parse_date(item.get("pubDate"))
 
@@ -578,10 +553,9 @@ def fetch_google_news(query: str, limit: int = 10) -> list[dict[str, Any]]:
 
     rows = []
     for entry in feed.entries[:limit]:
-        title = short_text(clean_html(getattr(entry, "title", "")), 120)
-        # Google News RSS 제목 뒤의 언론사 제거
+        title = short_text(clean_html(getattr(entry, "title", "")), 130)
         title = re.sub(r"\s+-\s+[^-]{1,35}$", "", title).strip()
-        description = short_text(clean_html(getattr(entry, "summary", "")), 160)
+        description = short_text(clean_html(getattr(entry, "summary", "")), 180)
         url = getattr(entry, "link", "") or ""
         published_at = parse_date(getattr(entry, "published", ""))
 
@@ -600,22 +574,34 @@ def fetch_google_news(query: str, limit: int = 10) -> list[dict[str, Any]]:
     return rows
 
 
+def filter_recent_articles(articles: list[dict[str, Any]], lookback_hours: int) -> list[dict[str, Any]]:
+    cutoff = datetime.now(KST) - timedelta(hours=lookback_hours)
+    filtered = []
+    for article in articles:
+        published = article.get("published_at")
+        if isinstance(published, datetime) and published < cutoff:
+            continue
+        filtered.append(article)
+    return filtered
+
+
 def fetch_news_for_keyword(keyword: str, max_articles: int = 5) -> list[dict[str, Any]]:
     rows = []
     rows.extend(fetch_naver_news(keyword, display=max_articles))
     if len(rows) < max_articles:
         rows.extend(fetch_google_news(keyword, limit=max_articles))
 
-    # 중복 제거
     seen = set()
     unique = []
     for row in rows:
-        key = (row.get("title") or "").lower()
-        key = re.sub(r"[^0-9a-zA-Z가-힣]", "", key)[:100]
+        key = compact_key(row.get("title", ""))
         if not key or key in seen:
             continue
         seen.add(key)
         unique.append(row)
+
+    lookback_hours = env_int("HOT_ISSUE_LOOKBACK_HOURS", 48)
+    unique = filter_recent_articles(unique, lookback_hours)
 
     unique.sort(
         key=lambda x: (
@@ -632,37 +618,33 @@ def fetch_news_for_keyword(keyword: str, max_articles: int = 5) -> list[dict[str
 # ============================================================
 
 def collect_candidate_keywords() -> list[dict[str, Any]]:
-    mode = category_policy_from_env()["mode"]
-
     candidates: list[dict[str, Any]] = []
 
-    # 1) 경제/금융 우선 seed
-    if mode == "finance_first":
-        for seed in FINANCE_PRIORITY_SEEDS:
-            candidates.append({
-                "keyword": seed,
-                "source": "finance_seed",
-                "seed_priority": 1.0,
-            })
+    for seed in FINANCE_PRIORITY_SEEDS:
+        candidates.append({
+            "keyword": seed,
+            "source": "finance_seed",
+            "trend_score": 8.0,
+            "seed_priority": 1.0,
+        })
 
-    # 2) Google Trends
     trend_limit = env_int("HOT_ISSUE_TREND_LIMIT", 35)
-    for kw in fetch_google_trends_keywords(limit=trend_limit):
+    for rank, kw in enumerate(fetch_google_trends_keywords(limit=trend_limit), start=1):
         candidates.append({
             "keyword": kw,
             "source": "google_trends",
+            "trend_score": max(8.0, 42.0 - rank),
             "seed_priority": 0.0,
         })
 
-    # 3) 균형 seed 보조
     for seed in BALANCED_SEEDS:
         candidates.append({
             "keyword": seed,
             "source": "balanced_seed",
+            "trend_score": 6.0,
             "seed_priority": 0.2,
         })
 
-    # 중복 제거
     seen = set()
     unique = []
     for item in candidates:
@@ -680,57 +662,209 @@ def collect_candidate_keywords() -> list[dict[str, Any]]:
 def article_recency_score(article: dict[str, Any]) -> float:
     published = article.get("published_at")
     if not isinstance(published, datetime):
-        return 0.0
+        return 2.0
 
     now = datetime.now(KST)
     hours = max(0.0, (now - published).total_seconds() / 3600)
     if hours <= 6:
-        return 18
+        return 18.0
     if hours <= 12:
-        return 14
+        return 14.0
     if hours <= 24:
-        return 10
+        return 10.0
     if hours <= 48:
-        return 6
-    return 2
+        return 6.0
+    return 1.0
 
 
-def score_candidate(keyword: str, source: str, seed_priority: float, articles: list[dict[str, Any]]) -> dict[str, Any]:
+def count_keyword_hits(text: str, words: list[str]) -> int:
+    lower = text.lower()
+    return sum(1 for word in words if word.lower() in lower)
+
+
+def noise_score(keyword: str, articles: list[dict[str, Any]], category: str) -> tuple[float, list[str]]:
+    text = " ".join([keyword] + [a.get("title", "") + " " + a.get("description", "") for a in articles[:5]])
+    hits = [word for word in NOISE_KEYWORDS if word.lower() in text.lower()]
+    score = len(hits) * 18.0
+
+    if category in {"연예·문화", "스포츠", "기타"}:
+        score += 18.0
+
+    # 근거자료가 전부 약한 도메인이거나 포토/방송 캡처성인 경우 감점
+    if count_keyword_hits(text, ["포토", "캡처", "인스타", "열애설", "종영"]) >= 2:
+        score += 14.0
+
+    return score, hits[:6]
+
+
+def adsense_value_score(keyword: str, articles: list[dict[str, Any]], category: str) -> float:
+    text = " ".join([keyword] + [a.get("title", "") + " " + a.get("description", "") for a in articles[:5]])
+    hits = count_keyword_hits(text, ADSENSE_VALUE_KEYWORDS)
+
+    base_by_category = {
+        "경제·금융": 34,
+        "증권·투자": 32,
+        "산업·기업": 30,
+        "정책·지원금": 32,
+        "부동산·주거금융": 34,
+        "생활·제도": 28,
+        "건강·의료": 24,
+        "교육·입시": 22,
+        "국제": 18,
+        "날씨·안전": 18,
+        "시사·정치": 15,
+        "사회·사건": 14,
+        "스포츠": 4,
+        "연예·문화": 3,
+        "기타": 2,
+    }.get(category, 5)
+
+    return base_by_category + min(hits * 3, 24)
+
+
+def editorial_importance_score(keyword: str, articles: list[dict[str, Any]], category: str) -> float:
+    text = " ".join([keyword] + [a.get("title", "") + " " + a.get("description", "") for a in articles[:5]])
+    hits = count_keyword_hits(text, EDITORIAL_IMPORTANCE_KEYWORDS)
+
+    category_weight = {
+        "경제·금융": 22,
+        "증권·투자": 20,
+        "산업·기업": 18,
+        "정책·지원금": 20,
+        "부동산·주거금융": 18,
+        "생활·제도": 18,
+        "국제": 16,
+        "날씨·안전": 16,
+        "시사·정치": 14,
+        "사회·사건": 12,
+        "건강·의료": 12,
+        "교육·입시": 10,
+        "스포츠": 2,
+        "연예·문화": 2,
+        "기타": 1,
+    }.get(category, 5)
+
+    return category_weight + min(hits * 3, 21)
+
+
+def evidence_score(articles: list[dict[str, Any]]) -> float:
+    count = len(articles)
+    if count <= 0:
+        return -50
+    domain_count = len({a.get("domain") for a in articles if a.get("domain")})
+    return min(count * 9 + domain_count * 3, 55)
+
+
+def make_why_important(keyword: str, category: str, noise: float) -> str:
+    if category in {"경제·금융", "부동산·주거금융", "생활·제도"}:
+        return "생활비·물가·금융 부담과 직접 연결되는 이슈입니다."
+    if category == "증권·투자":
+        return "증시 흐름과 투자심리 변화를 설명할 수 있는 이슈입니다."
+    if category == "산업·기업":
+        return "기업 실적·공급망·산업 경쟁력과 연결되는 이슈입니다."
+    if category == "정책·지원금":
+        return "정부 정책 변화와 독자 행동 체크포인트가 있는 이슈입니다."
+    if category in {"국제", "날씨·안전"}:
+        return "국내 경제·생활에 파급될 수 있는 외부 변수입니다."
+    if category in {"시사·정치", "사회·사건", "건강·의료", "교육·입시"}:
+        return "사회적 관심과 제도 변화 가능성이 있는 이슈입니다."
+    if noise >= 25:
+        return "검색 관심은 높지만 정보성 글감으로는 제한적입니다."
+    return "대중 관심이 높아 보조 이슈로 활용할 수 있습니다."
+
+
+def make_blog_angle(keyword: str, category: str, adsense_score_value: float) -> str:
+    if adsense_score_value >= 45:
+        return f"{keyword}의 배경, 영향, 확인할 체크포인트를 정리하는 정보형 글"
+    if category in {"스포츠", "연예·문화"}:
+        return f"{keyword} 관련 이슈 흐름과 대중 관심 포인트를 가볍게 정리하는 글"
+    return f"{keyword} 핵심 내용과 후속 확인 포인트를 정리하는 글"
+
+
+def make_card_angle(keyword: str, category: str) -> str:
+    if category in {"경제·금융", "증권·투자", "산업·기업", "정책·지원금", "부동산·주거금융", "생활·제도"}:
+        return "원인 → 생활/시장 영향 → 확인할 지표 → 대응 체크리스트"
+    if category in {"국제", "날씨·안전"}:
+        return "발생 상황 → 국내 영향 → 위험 요인 → 체크포인트"
+    return "핵심 사건 → 쟁점 → 영향을 받는 사람 → 후속 확인"
+
+
+def score_candidate(keyword: str, source: str, seed_priority: float, trend_score_value: float, articles: list[dict[str, Any]]) -> dict[str, Any]:
     category = classify_category(keyword, articles)
-    policy = category_policy_from_env()
+    recent_score = sum(article_recency_score(a) for a in articles[:5])
+    evid_score = evidence_score(articles)
+    adsense_score_value = adsense_value_score(keyword, articles, category)
+    editorial_score_value = editorial_importance_score(keyword, articles, category)
+    n_score, noise_flags = noise_score(keyword, articles, category)
 
-    news_count = len(articles)
-    recency = sum(article_recency_score(a) for a in articles[:5])
-    source_bonus = 18 if source == "google_trends" else 0
-    seed_bonus = 35 * float(seed_priority or 0)
+    source_bonus = 12.0 if source == "google_trends" else 0.0
+    seed_bonus = 18.0 * float(seed_priority or 0)
+    category_boost = {
+        "경제·금융": 25,
+        "증권·투자": 23,
+        "산업·기업": 22,
+        "정책·지원금": 23,
+        "부동산·주거금융": 22,
+        "생활·제도": 18,
+        "국제": 13,
+        "날씨·안전": 12,
+        "시사·정치": 10,
+        "사회·사건": 8,
+        "건강·의료": 10,
+        "교육·입시": 8,
+        "스포츠": -8,
+        "연예·문화": -10,
+        "기타": -14,
+    }.get(category, 0)
 
-    category_bonus = 0
-    if category in policy["priority_categories"]:
-        category_bonus = 55 if policy["mode"] == "finance_first" else 18
-    elif category in policy["secondary_categories"]:
-        category_bonus = 14
-    elif category in policy["low_priority_categories"]:
-        category_bonus = -10 if policy["mode"] == "finance_first" else 0
+    final_score = (
+        trend_score_value * 0.9
+        + evid_score
+        + recent_score * 0.7
+        + adsense_score_value
+        + editorial_score_value
+        + category_boost
+        + source_bonus
+        + seed_bonus
+        - n_score
+    )
 
-    # 뉴스 근거가 거의 없는 후보는 감점
-    evidence_penalty = -35 if news_count == 0 else 0
-
-    score = news_count * 16 + recency + source_bonus + seed_bonus + category_bonus + evidence_penalty
-
+    slot = item_slot({"category": category})
     return {
         "keyword": keyword,
         "category": category,
-        "score": round(score, 2),
+        "slot": slot,
+        "score": round(final_score, 2),
+        "editorial_score": round(editorial_score_value + adsense_score_value + evid_score - n_score, 2),
+        "trend_score": round(trend_score_value, 2),
+        "evidence_score": round(evid_score, 2),
+        "adsense_score": round(adsense_score_value, 2),
+        "freshness_score": round(recent_score, 2),
+        "noise_score": round(n_score, 2),
+        "noise_flags": noise_flags,
         "source": source,
         "articles": articles,
-        "article_count": news_count,
+        "article_count": len(articles),
+        "why_important": make_why_important(keyword, category, n_score),
+        "blog_angle": make_blog_angle(keyword, category, adsense_score_value),
+        "card_angle": make_card_angle(keyword, category),
+        "score_breakdown": {
+            "trend": round(trend_score_value * 0.9, 2),
+            "evidence": round(evid_score, 2),
+            "freshness": round(recent_score * 0.7, 2),
+            "adsense": round(adsense_score_value, 2),
+            "editorial": round(editorial_score_value, 2),
+            "category_boost": round(category_boost, 2),
+            "source_bonus": round(source_bonus, 2),
+            "seed_bonus": round(seed_bonus, 2),
+            "noise_penalty": round(n_score, 2),
+        },
     }
 
 
 def build_scored_items() -> list[dict[str, Any]]:
     max_articles = env_int("HOT_ISSUE_NEWS_PER_KEYWORD", 5)
     candidates = collect_candidate_keywords()
-
     print(f"[candidates] {len(candidates)}")
 
     scored = []
@@ -742,6 +876,7 @@ def build_scored_items() -> list[dict[str, Any]]:
             keyword=keyword,
             source=candidate.get("source", ""),
             seed_priority=float(candidate.get("seed_priority") or 0),
+            trend_score_value=float(candidate.get("trend_score") or 0),
             articles=articles,
         )
 
@@ -750,37 +885,192 @@ def build_scored_items() -> list[dict[str, Any]]:
 
         print(
             f"[{idx}/{len(candidates)}] {keyword} "
-            f"category={item['category']} score={item['score']} articles={item['article_count']}"
+            f"slot={item['slot']} category={item['category']} "
+            f"score={item['score']} editorial={item['editorial_score']} noise={item['noise_score']} "
+            f"articles={item['article_count']}"
         )
 
         time.sleep(env_float("HOT_ISSUE_REQUEST_SLEEP", 0.12))
 
-    return sort_items(scored)
+    return sorted(scored, key=lambda x: x.get("score", 0), reverse=True)
+
+
+# ============================================================
+# 선발 엔진
+# ============================================================
+
+def is_duplicate_item(item: dict[str, Any], selected: list[dict[str, Any]], threshold: float = 0.42) -> bool:
+    text = f"{item.get('keyword','')} " + " ".join(a.get("title", "") for a in item.get("articles", [])[:3])
+    for chosen in selected:
+        other = f"{chosen.get('keyword','')} " + " ".join(a.get("title", "") for a in chosen.get("articles", [])[:3])
+        if compact_key(item.get("keyword", "")) == compact_key(chosen.get("keyword", "")):
+            return True
+        if text_similarity(text, other) >= threshold:
+            return True
+    return False
+
+
+def select_slot_editorial_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    top_n = env_int("HOT_ISSUE_TOP_N", DEFAULT_TOP_N)
+    slot_plan = slot_plan_from_env()
+    noise_max = env_int("HOT_ISSUE_NOISE_MAX", 1)
+    dedupe_threshold = env_float("HOT_ISSUE_DEDUPE_THRESHOLD", 0.42)
+
+    sorted_items = sorted(items, key=lambda x: x.get("score", 0), reverse=True)
+    selected: list[dict[str, Any]] = []
+
+    def can_add(item: dict[str, Any]) -> bool:
+        if len(selected) >= top_n:
+            return False
+        if is_duplicate_item(item, selected, threshold=dedupe_threshold):
+            return False
+        if item.get("slot") == "대중관심":
+            current_noise = sum(1 for x in selected if x.get("slot") == "대중관심")
+            if current_noise >= noise_max:
+                return False
+        return True
+
+    # 1) 고정 슬롯 선발
+    for slot_name, count in slot_plan:
+        slot_categories = SLOT_DEFINITIONS.get(slot_name, [])
+        pool = [
+            item for item in sorted_items
+            if (item.get("slot") == slot_name or item.get("category") in slot_categories)
+        ]
+        picked = 0
+        for item in pool:
+            if picked >= count:
+                break
+            if can_add(item):
+                selected.append(item)
+                picked += 1
+
+    # 2) 부족하면 편집 점수순 보충. 단 대중관심은 제한 유지.
+    if len(selected) < top_n:
+        fallback = sorted(
+            sorted_items,
+            key=lambda x: (
+                x.get("slot") == "대중관심",
+                -float(x.get("editorial_score") or 0),
+                -float(x.get("score") or 0),
+            )
+        )
+        for item in fallback:
+            if len(selected) >= top_n:
+                break
+            if can_add(item):
+                selected.append(item)
+
+    # 3) 그래도 부족하면 중복만 피하고 채움.
+    if len(selected) < top_n:
+        for item in sorted_items:
+            if len(selected) >= top_n:
+                break
+            if is_duplicate_item(item, selected, threshold=dedupe_threshold):
+                continue
+            selected.append(item)
+
+    # 최종 순서는 슬롯 계획 순서 → 점수
+    slot_order = {slot: idx for idx, (slot, _) in enumerate(slot_plan)}
+    selected.sort(key=lambda x: (slot_order.get(x.get("slot"), 999), -float(x.get("score") or 0)))
+
+    for idx, item in enumerate(selected, start=1):
+        item["rank"] = idx
+
+    return selected[:top_n]
+
+
+def apply_hotissue_editorial_policy(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    mode = env("HOT_ISSUE_EDITORIAL_MODE", "slot_editorial").lower()
+    top_n = env_int("HOT_ISSUE_TOP_N", DEFAULT_TOP_N)
+
+    if mode == "all_score":
+        selected = sorted(items, key=lambda x: x.get("score", 0), reverse=True)[:top_n]
+    else:
+        selected = select_slot_editorial_items(items)
+
+    for idx, item in enumerate(selected, start=1):
+        item["rank"] = idx
+    return selected
+
+
+def select_morning_cardnews_items(hot_items: list[dict[str, Any]], max_issues: int = 5) -> list[dict[str, Any]]:
+    """Daily TOP 10 중 Morning 카드뉴스로 설명하기 좋은 이슈를 고릅니다."""
+    min_score = env_float("HEADLINE_CARDNEWS_MIN_EDITORIAL_SCORE", 40.0)
+    avoid_slots = set(parse_csv(env("HEADLINE_AVOID_SLOTS"), ["대중관심"]))
+    prefer_slots = parse_csv(
+        env("HEADLINE_PREFER_SLOTS"),
+        ["경제·금융", "증권·투자", "산업·기업", "정책·생활", "국제·안전", "사회·시사"],
+    )
+
+    preferred = [
+        item for item in hot_items
+        if item.get("slot") in prefer_slots
+        and float(item.get("editorial_score") or 0) >= min_score
+    ]
+
+    selected: list[dict[str, Any]] = []
+    for item in sorted(preferred, key=lambda x: (prefer_slots.index(x.get("slot")) if x.get("slot") in prefer_slots else 999, -float(x.get("editorial_score") or 0))):
+        if len(selected) >= max_issues:
+            break
+        if not is_duplicate_item(item, selected):
+            selected.append(item)
+
+    if len(selected) < max_issues:
+        fallback = [
+            item for item in hot_items
+            if item not in selected and item.get("slot") not in avoid_slots
+        ]
+        fallback.sort(key=lambda x: -float(x.get("editorial_score") or 0))
+        for item in fallback:
+            if len(selected) >= max_issues:
+                break
+            if not is_duplicate_item(item, selected):
+                selected.append(item)
+
+    if len(selected) < max_issues:
+        for item in hot_items:
+            if len(selected) >= max_issues:
+                break
+            if item not in selected and not is_duplicate_item(item, selected):
+                selected.append(item)
+
+    for idx, item in enumerate(selected, start=1):
+        item["morning_rank"] = idx
+    return selected[:max_issues]
 
 
 # ============================================================
 # 리포트 생성
 # ============================================================
 
-def weekday_ko(dt: datetime) -> str:
-    return "월화수목금토일"[dt.weekday()]
-
-
 def build_telegram_report(items: list[dict[str, Any]]) -> str:
     lines = []
     lines.append("🔥 오늘의 핫이슈 TOP 10")
     lines.append("")
-    lines.append("📊 카테고리 정책")
-    lines.append(policy_debug_text())
+    lines.append("📊 오늘의 이슈 구성")
+    lines.append(f"슬롯 구성: {slot_mix_text(items)}")
     lines.append(f"카테고리 구성: {category_mix_text(items)}")
+    lines.append(f"편집 정책: {editorial_policy_text()}")
     lines.append("")
 
     for idx, item in enumerate(items, start=1):
-        lines.append(f"{idx}. [{item['category']}] {item['keyword']}")
-        lines.append("근거자료:")
+        score_brief = (
+            f"편집점수 {item.get('editorial_score')} / "
+            f"글감 {item.get('adsense_score')} / "
+            f"노이즈 {item.get('noise_score')}"
+        )
+        lines.append(f"{idx}. [{item.get('slot')}/{item.get('category')}] {item['keyword']}")
+        lines.append(f"왜 중요함: {item.get('why_important')}")
+        lines.append(f"글감 방향: {item.get('blog_angle')}")
+        lines.append(f"점수: {score_brief}")
 
+        if item.get("noise_flags"):
+            lines.append(f"주의 신호: {', '.join(item.get('noise_flags')[:4])}")
+
+        lines.append("근거자료:")
         for article_idx, article in enumerate(item.get("articles", [])[:5], start=1):
-            title = short_text(article.get("title", ""), 76)
+            title = short_text(article.get("title", ""), 78)
             url = article.get("url", "")
             domain = article.get("domain") or domain_of(url)
             date = fmt_date(article.get("published_at"))
@@ -791,23 +1081,27 @@ def build_telegram_report(items: list[dict[str, Any]]) -> str:
 
         lines.append("")
 
-    card_items = items[:3]
+    card_items = select_morning_cardnews_items(items, max_issues=min(3, len(items)))
     lines.append("🃏 오늘의 카드뉴스 추천")
     lines.append("")
     for idx, item in enumerate(card_items, start=1):
         lines.append(f"{idx}. #{idx} {item['keyword']}")
-        lines.append("구성방향: 핵심 원인 → 영향받는 사람 → 확인할 자료 → 대응 체크리스트 카드 구성")
+        lines.append(f"구성방향: {item.get('card_angle')}")
         lines.append("")
 
     lines.append("✍️ 오늘의 작성글 추천")
     lines.append("")
-    for idx, item in enumerate(card_items, start=1):
+    article_items = sorted(
+        items,
+        key=lambda x: (-float(x.get("adsense_score") or 0), -float(x.get("editorial_score") or 0)),
+    )[:3]
+    for idx, item in enumerate(article_items, start=1):
         lines.append(f"{idx}. #{idx} {item['keyword']}")
-        lines.append(f"글방향: {item['keyword']} 핵심 배경과 독자가 확인할 체크포인트를 정리하는 글")
+        lines.append(f"글방향: {item.get('blog_angle')}")
         lines.append("")
 
     lines.append("📌 확인 메모")
-    lines.append("각 근거자료는 원문 확인용입니다.")
+    lines.append("이 리포트는 단순 검색량보다 경제성·정보성·글감 가치를 우선 반영합니다.")
     lines.append("금융·정책 이슈는 발행 전 공식 자료를 한 번 더 확인하세요.")
 
     return "\n".join(lines).strip()
@@ -868,18 +1162,23 @@ def json_safe(obj: Any):
     return str(obj)
 
 
-def save_reports(items: list[dict[str, Any]], report_text: str) -> None:
+def save_reports(items: list[dict[str, Any]], report_text: str, scored_items: list[dict[str, Any]] | None = None) -> None:
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
 
     now = datetime.now(KST)
     ymd = now.strftime("%Y%m%d")
+    morning_items = select_morning_cardnews_items(items, max_issues=env_int("HEADLINE_CARDNEWS_ISSUES", 5))
 
     payload = {
         "generated_at": now.isoformat(),
-        "category_policy": category_policy_from_env(),
+        "editorial_policy": editorial_policy_text(),
+        "slot_plan": [{"slot": s, "count": c} for s, c in slot_plan_from_env()],
+        "slot_mix": slot_mix_text(items),
         "category_mix": category_mix_text(items),
-        "items": items,
+        "items": scored_items or [],
+        "hot_items": items,
+        "morning_items": morning_items,
     }
 
     paths = [
@@ -904,64 +1203,59 @@ def save_reports(items: list[dict[str, Any]], report_text: str) -> None:
 
 
 # ============================================================
-# 실행
-# ============================================================
-
-def main() -> None:
-    print("[Daily AdSense SEO Hot Issue Report]")
-    print("KST now:", datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
-    print("Policy:", policy_debug_text())
-
-    scored_items = build_scored_items()
-    if not scored_items:
-        message = "🔥 오늘의 핫이슈 TOP 10\n\n수집된 이슈 후보가 없습니다."
-        send_telegram_message(message)
-        return
-
-    top_items = apply_hotissue_category_policy(scored_items)
-
-    print("[selected category mix]", category_mix_text(top_items))
-    for idx, item in enumerate(top_items, start=1):
-        print(f"{idx}. [{item['category']}] {item['keyword']} score={item['score']}")
-
-    report_text = build_telegram_report(top_items)
-    save_reports(top_items, report_text)
-    send_telegram_message(report_text)
-
-
-# ============================================================
-# 외부 호출용 Payload Builder
+# 실행 / Payload
 # ============================================================
 
 def build_daily_hotissue_payload(*, send_report: bool = False, save_report: bool = False) -> dict[str, Any]:
-    """Daily와 Morning이 함께 쓰는 단일 마스터 HOT Issue payload를 생성합니다.
-
-    - Daily workflow: main()이 이 함수를 이용해 텔레그램 전송/저장까지 수행합니다.
-    - Morning workflow: 이 함수를 호출해 같은 로직으로 TOP Item을 얻고 카드뉴스를 만듭니다.
-
-    반환 구조는 기존 Morning cardnews 변환기가 이해할 수 있도록 hot_items/items 키를 제공합니다.
-    """
     scored_items = build_scored_items()
-    top_items = apply_hotissue_category_policy(scored_items) if scored_items else []
-    report_text = build_telegram_report(top_items) if top_items else "🔥 오늘의 핫이슈 TOP 10\n\n수집된 이슈 후보가 없습니다."
+    hot_items = apply_hotissue_editorial_policy(scored_items) if scored_items else []
+    morning_items = select_morning_cardnews_items(hot_items, max_issues=env_int("HEADLINE_CARDNEWS_ISSUES", 5))
+    report_text = build_telegram_report(hot_items) if hot_items else "🔥 오늘의 핫이슈 TOP 10\n\n수집된 이슈 후보가 없습니다."
 
-    if save_report and top_items:
-        save_reports(top_items, report_text)
+    if save_report and hot_items:
+        save_reports(hot_items, report_text, scored_items=scored_items)
 
     if send_report:
         send_telegram_message(report_text)
 
     return {
         "items": scored_items,
-        "hot_items": top_items,
-        "card_items": top_items[:3],
-        "article_items": top_items[:3],
+        "hot_items": hot_items,
+        "morning_items": morning_items,
+        "card_items": morning_items,
+        "article_items": sorted(hot_items, key=lambda x: (-float(x.get("adsense_score") or 0), -float(x.get("editorial_score") or 0)))[:3],
         "report_text": report_text,
-        "category_policy": category_policy_from_env(),
-        "category_mix": category_mix_text(top_items),
-        "effective_lookback_hours": env_int("LOOKBACK_HOURS", env_int("HOT_ISSUE_LOOKBACK_HOURS", 48)),
-        "hot_issue_count": len(top_items),
+        "editorial_policy": editorial_policy_text(),
+        "slot_mix": slot_mix_text(hot_items),
+        "category_mix": category_mix_text(hot_items),
+        "effective_lookback_hours": env_int("HOT_ISSUE_LOOKBACK_HOURS", 48),
+        "hot_issue_count": len(hot_items),
     }
+
+
+def main() -> None:
+    print("[Daily AdSense SEO Hot Issue Report · Editorial Engine v1.28]")
+    print("KST now:", datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
+    print("Policy:", editorial_policy_text())
+
+    payload = build_daily_hotissue_payload(send_report=False, save_report=False)
+    hot_items = payload.get("hot_items") or []
+
+    if not hot_items:
+        message = "🔥 오늘의 핫이슈 TOP 10\n\n수집된 이슈 후보가 없습니다."
+        send_telegram_message(message)
+        return
+
+    print("[selected slot mix]", payload.get("slot_mix"))
+    for idx, item in enumerate(hot_items, start=1):
+        print(
+            f"{idx}. [{item.get('slot')}/{item.get('category')}] {item.get('keyword')} "
+            f"score={item.get('score')} editorial={item.get('editorial_score')} adsense={item.get('adsense_score')} noise={item.get('noise_score')}"
+        )
+
+    report_text = payload["report_text"]
+    save_reports(hot_items, report_text, scored_items=payload.get("items") or [])
+    send_telegram_message(report_text)
 
 
 if __name__ == "__main__":
