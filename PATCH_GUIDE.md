@@ -1,43 +1,36 @@
-# v1.16 Telegram 연결 테스트 메시지 제거 패치
+# v1.17 아침 헤드라인 뉴스 품질 개선 패치
 
-## 요청 반영
-
-Telegram 연결 테스트가 정상적으로 완료되더라도 더 이상 아래 테스트 문구를 텔레그램으로 보내지 않도록 수정했습니다.
+## 수정 대상
 
 ```text
-Telegram 연결 테스트
-- 실행 시각: ...
-- 메시지가 보이면 GitHub Actions → Telegram 연결은 정상입니다.
+app/jobs/send_headline_news_report.py
+docs/morning_headline_quality_fix_v1_17.md
 ```
 
-## 업로드/교체할 파일
+## 해결하는 문제
+
+아침 헤드라인 뉴스가 아래처럼 작성되다 만 것처럼 보이는 문제를 수정합니다.
 
 ```text
-app/services/telegram_report_service.py
-app/jobs/send_telegram_test.py
-docs/telegram_silent_validation_v1_16.md
+오늘의 주요뉴스…
+1부 오늘의 주요뉴스
+베네수엘라 강진⋯김건희 ... 外
 ```
 
-## 변경 후 동작
+## 변경 내용
 
-`Telegram Send Test`를 실행해도 텔레그램 메시지는 오지 않습니다.
+1. 종합/브리핑성 기사 제목 제외
+2. 연예/운세/포토뉴스 등 낮은 가치 제목 제외
+3. 검색어를 구체적인 이슈형 쿼리로 변경
+4. 텍스트 메시지 제목은 최대한 원문 유지
+5. 이미지용 요약과 텍스트용 제목을 분리
 
-대신 GitHub Actions 로그에만 아래 정보가 남습니다.
+## 적용 후 테스트
 
 ```text
-telegram env
-telegram connection validation
-message_sent: false
+Actions
+→ Morning Headline News Report
+→ Run workflow
 ```
 
-## 주의
-
-실제 리포트 메시지는 계속 전송됩니다.
-
-영향 받지 않는 리포트:
-
-```text
-Morning Headline News Report
-Daily AdSense SEO Hot Issue Report
-AdSense Dashboard Pipeline Report
-```
+정상이라면 텍스트 메시지에서 `오늘의 주요뉴스`, `1부 오늘의 주요뉴스`, `外` 같은 제목이 크게 줄어야 합니다.
