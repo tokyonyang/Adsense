@@ -1,30 +1,81 @@
-# v1.10.2 Telegram 자동 전송 진단/수정 패치
+# v1.11 Workflow 스케줄 분리 패치
 
-## 증상
+## 요청 반영 내용
 
-GitHub Actions는 실행됐는데 텔레그램 자동 메시지가 오지 않는 경우.
+두 종류의 텔레그램 메시지를 모두 실행하도록 구성했습니다.
 
-## 이번 패치에서 바꾼 점
+```text
+1. Daily AdSense SEO 핫이슈 리포트
+2. 새 대시보드 파이프라인 리포트
+```
 
-- 텔레그램 토큰/채팅ID 존재 여부를 Actions 로그에 표시
-- 텔레그램 전송 실패 시 Actions가 실패하도록 변경
-- 수동 테스트용 workflow 추가
-- 자동 파이프라인 전에 Telegram test message를 먼저 보냄
+단, 새 대시보드 파이프라인은 한국시간 오전 9시와 오후 5시에만 전송되도록 설정했습니다.
 
 ## GitHub에 업로드/교체할 파일
 
 ```text
-app/services/telegram_report_service.py
-app/jobs/send_telegram_test.py
-app/jobs/run_daily_pipeline.py
+.github/workflows/daily-adsense-seo.yml
 .github/workflows/adsense-dashboard-cron.yml
 .github/workflows/telegram-send-test.yml
-docs/telegram_delivery_fix_v1_10_2.md
+docs/workflow_schedule_v1_11.md
 ```
 
-## 적용 후 가장 먼저 할 테스트
+## 스케줄
 
-GitHub에서:
+### 1. Daily AdSense SEO Hot Issue Report
+
+기존 핫이슈 리포트입니다.
+
+```text
+KST 06:00 / 11:00 / 15:00 / 19:00
+```
+
+cron:
+
+```text
+0 21,2,6,10 * * *
+```
+
+전송 메시지 형태:
+
+```text
+🔥 오늘의 핫이슈 TOP 10
+```
+
+### 2. AdSense Dashboard Pipeline Report
+
+새 대시보드 파이프라인 리포트입니다.
+
+```text
+KST 09:00 / 17:00
+```
+
+cron:
+
+```text
+0 0,8 * * *
+```
+
+전송 메시지 형태:
+
+```text
+🤖 AdSense SEO 자동 수집 리포트
+📊 경제지표 검색 강화 상태
+```
+
+## 적용 후 확인
+
+GitHub Actions 화면에서 아래 3개 workflow가 보여야 합니다.
+
+```text
+Daily AdSense SEO Hot Issue Report
+AdSense Dashboard Pipeline Report
+Telegram Send Test
+```
+
+## 수동 테스트 순서
+
+1. 텔레그램 연결 테스트
 
 ```text
 Actions
@@ -32,46 +83,24 @@ Actions
 → Run workflow
 ```
 
-성공하면 텔레그램에 아래 메시지가 와야 합니다.
-
-```text
-✅ Telegram 연결 테스트
-```
-
-## 테스트가 실패하면
-
-Actions 로그에서 아래를 확인하세요.
-
-```text
-TELEGRAM_BOT_TOKEN이 설정되지 않았습니다.
-TELEGRAM_CHAT_ID가 설정되지 않았습니다.
-Telegram 전송 실패: ...
-```
-
-## TELEGRAM_CHAT_ID 확인
-
-채널/그룹이면 보통 아래처럼 `-100`으로 시작합니다.
-
-```text
--100xxxxxxxxxx
-```
-
-채널에는 봇을 관리자로 추가하고 메시지 전송 권한을 줘야 합니다.
-
-## 자동 리포트 확인
-
-Telegram Send Test가 성공한 뒤:
+2. 기존 핫이슈 리포트 테스트
 
 ```text
 Actions
-→ AdSense Dashboard Cron
+→ Daily AdSense SEO Hot Issue Report
 → Run workflow
 ```
 
-단계에 아래가 보여야 합니다.
+3. 대시보드 파이프라인 테스트
 
 ```text
-Validate Telegram secrets
-Preview event boost config
-Run daily dashboard pipeline and Telegram report
+Actions
+→ AdSense Dashboard Pipeline Report
+→ Run workflow
 ```
+
+## 중복 전송 주의
+
+기존에 `daily-adsense-seo.yml` 또는 `adsense-dashboard-cron.yml` 외에 다른 workflow가 `main.py`나 `app.jobs.run_daily_pipeline`을 실행하고 있으면 메시지가 중복될 수 있습니다.
+
+Actions 목록에서 비슷한 workflow가 있으면 이름과 스케줄을 확인하세요.
