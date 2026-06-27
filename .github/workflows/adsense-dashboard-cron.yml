@@ -1,11 +1,12 @@
-name: AdSense Dashboard Cron
+name: AdSense Dashboard Pipeline Report
 
 on:
   workflow_dispatch:
   schedule:
-    # KST 06:00, 11:00, 15:00, 19:00
-    # UTC 21:00(previous day), 02:00, 06:00, 10:00
-    - cron: "0 21,2,6,10 * * *"
+    # Dashboard operator report
+    # KST 09:00, 17:00
+    # UTC 00:00, 08:00
+    - cron: "0 0,8 * * *"
 
 jobs:
   run-dashboard-pipeline:
@@ -35,7 +36,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.dashboard.txt
+
+          if [ -f requirements.dashboard.txt ]; then
+            pip install -r requirements.dashboard.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install requests supabase python-dotenv || true
 
       - name: Validate Telegram secrets
         run: |
