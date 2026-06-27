@@ -29,61 +29,25 @@ def domain(url: str | None) -> str:
         return "news"
 
 
-def normalize_category(category: str) -> str:
-    category = str(category or "주요").strip()
-    aliases = {
-        "경제": "경제·금융",
-        "증시": "증권·투자",
-        "산업": "산업·기업",
-        "정책": "정책·지원금",
-        "생활": "생활·제도",
-        "정치": "시사·정치",
-        "사회": "사회·사건",
-        "IT": "산업·기업",
-    }
-    return aliases.get(category, category)
-
-
 def cat_color(category: str) -> str:
-    category = normalize_category(category)
     return {
         "경제·금융": "#f4c542",
         "증권·투자": "#ff7a45",
         "산업·기업": "#ffb020",
         "정책·지원금": "#4d96ff",
-        "부동산·주거금융": "#d6a64f",
+        "정책·생활": "#4d96ff",
+        "부동산·주거금융": "#00c389",
         "생활·제도": "#00b8d9",
-        "국제": "#a66bff",
         "시사·정치": "#4d96ff",
         "사회·사건": "#00c389",
-        "날씨·안전": "#38bdf8",
+        "국제": "#a66bff",
+        "국제·안전": "#a66bff",
+        "날씨·안전": "#00b8d9",
         "건강·의료": "#22c55e",
-        "교육·입시": "#f59e0b",
+        "교육·입시": "#22c55e",
         "연예·문화": "#ec4899",
         "스포츠": "#22c55e",
-        "기타": "#cbd5e1",
-    }.get(category, "#f4c542")
-
-
-def cat_icon(category: str) -> str:
-    category = normalize_category(category)
-    return {
-        "경제·금융": "₩",
-        "증권·투자": "↗",
-        "산업·기업": "AI",
-        "정책·지원금": "🏛",
-        "부동산·주거금융": "🏠",
-        "생활·제도": "☀",
-        "국제": "🌐",
-        "시사·정치": "🏛",
-        "사회·사건": "⚖",
-        "날씨·안전": "☔",
-        "건강·의료": "＋",
-        "교육·입시": "✎",
-        "연예·문화": "★",
-        "스포츠": "⚽",
-        "기타": "•",
-    }.get(category, "•")
+    }.get(str(category), "#f4c542")
 
 
 def base_css() -> str:
@@ -168,23 +132,37 @@ body {
   padding:8px 28px; font-size:24px; font-weight:900; background:rgba(0,0,0,.24);
 }
 .section-label {
-  display:flex; align-items:center; gap:12px; color:#f4c542; font-size:27px; font-weight:900;
-  margin: 28px 0 18px;
+  display:flex; align-items:center; gap:12px; color:#f4c542; font-size:26px; font-weight:900;
+  margin: 24px 0 14px;
 }
 .section-label::after {
   content:""; height:1px; flex:1; background: linear-gradient(90deg, rgba(246,197,66,.85), transparent);
 }
 .bullets { list-style:none; padding:0; margin:0; }
 .bullets li {
-  position:relative; padding-left:28px; margin:18px 0; font-size:28px; line-height:1.42; color:rgba(255,255,255,.92); letter-spacing:-.9px;
+  position:relative; padding-left:28px; margin:15px 0; font-size:27px; line-height:1.36; color:rgba(255,255,255,.92); letter-spacing:-.9px;
 }
 .bullets li::before {
-  content:""; position:absolute; left:0; top:17px; width:9px; height:9px; border-radius:50%; background:#f4c542;
+  content:""; position:absolute; left:0; top:16px; width:9px; height:9px; border-radius:50%; background:#f4c542;
   box-shadow:0 0 12px rgba(246,197,66,.65);
 }
+.insight-box {
+  margin-top:24px; border:1px solid rgba(246,197,66,.58); border-radius:18px; padding:22px 26px;
+  background:linear-gradient(135deg, rgba(246,197,66,.08), rgba(255,255,255,.02));
+}
+.insight-title { font-size:25px; color:#f4c542; font-weight:900; }
+.insight-text { margin-top:11px; font-size:28px; line-height:1.42; letter-spacing:-.8px; }
+.chart-box {
+  margin-top:20px; display:grid; grid-template-columns: 1fr 425px; gap:24px; align-items:center;
+  border:1px solid rgba(255,255,255,.12); border-radius:18px; padding:18px 20px;
+  background:rgba(0,0,0,.28);
+}
+.chart-title { font-size:24px; color:#f4c542; font-weight:900; margin-bottom:10px; }
+.chart-caption { font-size:23px; color:#f2f2f2; line-height:1.35; }
+.chart-values { font-size:20px; color:#e5d59a; margin-top:8px; }
 .footer-row {
   position:absolute; left:0; right:0; bottom:0; height:84px; border-top:1px solid rgba(246,197,66,.45);
-  display:flex; align-items:center; gap:18px; padding:0 28px; color:#f7f0d1; font-size:23px; font-weight:800;
+  display:flex; align-items:center; gap:18px; padding:0 28px; color:#f7f0d1; font-size:22px; font-weight:800;
   background:rgba(0,0,0,.22);
 }
 .divider { width:1px; height:32px; background:rgba(246,197,66,.55); }
@@ -225,7 +203,7 @@ def cover_page(issues: list[dict[str, Any]], total_pages: int) -> str:
         for k in issue.get("keywords") or []:
             if k not in keywords:
                 keywords.append(k)
-    keywords = keywords[:8] or ["경제", "증시", "정치", "사회", "국제", "산업"]
+    keywords = keywords[:8] or ["경제", "증시", "정책", "산업", "국제", "생활"]
 
     top3 = issues[:3]
     top3_html = "".join(
@@ -238,13 +216,13 @@ def cover_page(issues: list[dict[str, Any]], total_pages: int) -> str:
 <main class="page">
   {header_html("", "아침 브리핑")}
   <section style="position:relative; margin-top:90px;">
-    <div style="font-size:90px; font-weight:900; letter-spacing:-5px; line-height:1.05;">
-      중복 이슈는 <span class="gold">하나로</span><br>
-      유사 기사 3건은 <span class="gold">3줄로</span>
+    <div style="font-size:86px; font-weight:900; letter-spacing:-5px; line-height:1.05;">
+      오늘의 이슈를<br>
+      <span class="gold">흐름과 전망</span>으로 정리
     </div>
     <p style="margin-top:28px; font-size:30px; line-height:1.55; color:#eee;">
-      오늘 아침 주요 기사를 유사 이슈별로 묶어<br>
-      카드뉴스형 브리핑으로 정리했습니다.
+      Daily Hot Issue 편집 엔진이 고른 핵심 뉴스를<br>
+      기사 흐름·시장 영향·체크포인트 중심으로 압축했습니다.
     </p>
   </section>
   <section class="card" style="height:360px; padding:36px; margin-top:46px;">
@@ -263,6 +241,36 @@ def cover_page(issues: list[dict[str, Any]], total_pages: int) -> str:
     return page_shell(body)
 
 
+def chart_html(issue: dict[str, Any]) -> str:
+    chart = issue.get("chart") or {}
+    if not chart:
+        return ""
+
+    if not chart.get("available") or not chart.get("svg"):
+        return f"""
+<section class="chart-box">
+  <div>
+    <div class="chart-title">📈 관련 지표</div>
+    <div class="chart-caption">{esc(chart.get("title") or "시장 지표")} 데이터 연결 대기</div>
+  </div>
+  <div style="height:150px; display:grid; place-items:center; color:#e5d59a; border:1px dashed rgba(246,197,66,.35); border-radius:14px;">
+    차트 데이터 확인 중
+  </div>
+</section>
+"""
+
+    return f"""
+<section class="chart-box">
+  <div>
+    <div class="chart-title">📈 {esc(chart.get("title"))}</div>
+    <div class="chart-caption">{esc(chart.get("caption"))}</div>
+    <div class="chart-values">시작 {esc(chart.get("start"))} → 최근 {esc(chart.get("end"))} {esc(chart.get("unit"))}</div>
+  </div>
+  <div>{chart.get("svg")}</div>
+</section>
+"""
+
+
 def issue_page(issue: dict[str, Any], page_index: int, total_pages: int) -> str:
     category = issue.get("category") or "주요"
     accent = cat_color(category)
@@ -272,7 +280,8 @@ def issue_page(issue: dict[str, Any], page_index: int, total_pages: int) -> str:
     source_line = " · ".join(domain(x.get("url")) for x in links[:3]) or "관련 기사 묶음"
 
     bullets = "".join(f"<li>{esc(line)}</li>" for line in (issue.get("summary_lines") or [])[:3])
-    insight = issue.get("insight") or "유사 기사 흐름을 하나의 이슈로 정리했습니다."
+    insight = issue.get("insight") or "기사 흐름과 시장 영향을 함께 확인할 필요가 있습니다."
+    chart_block = chart_html(issue)
 
     body = f"""
 <main class="page">
@@ -282,14 +291,15 @@ def issue_page(issue: dict[str, Any], page_index: int, total_pages: int) -> str:
       <div class="badge-num">{issue.get("rank", page_index-1)}</div>
       <div class="pill">{esc(category)}</div>
     </div>
-    <div style="margin-top:42px; font-size:50px; line-height:1.26; letter-spacing:-2.8px; font-weight:900;">
+    <div style="margin-top:38px; font-size:47px; line-height:1.22; letter-spacing:-2.6px; font-weight:900;">
       {esc(issue.get("headline"))}
     </div>
-    <div class="section-label">▤ 유사 기사 3건 핵심 요약</div>
+    <div class="section-label">▤ 기사 흐름 3줄 요약</div>
     <ul class="bullets">{bullets}</ul>
-    <section style="margin-top:36px; border:1px solid rgba(246,197,66,.5); border-radius:18px; padding:24px 26px; background:rgba(0,0,0,.22);">
-      <div style="font-size:25px; color:#f4c542; font-weight:900;">한줄 인사이트</div>
-      <div style="margin-top:12px; font-size:29px; line-height:1.45;">{esc(insight)}</div>
+    {chart_block}
+    <section class="insight-box">
+      <div class="insight-title">전망 인사이트</div>
+      <div class="insight-text">{esc(insight)}</div>
     </section>
     <div class="footer-row">
       <span style="color:#f4c542;">🏷 관련 키워드</span>
@@ -326,7 +336,7 @@ def summary_page(issues: list[dict[str, Any]], page_index: int, total_pages: int
     <div class="section-label">📊 카테고리 흐름</div>
     <div style="font-size:34px; line-height:1.5; margin-top:22px;">{esc(top_cat_text)}</div>
     <div style="font-size:25px; line-height:1.6; color:#e7e7e7; margin-top:30px;">
-      중복 기사를 하나로 묶어 실제로 반복 노출되는 핵심 이슈만 남겼습니다.
+      단순 키워드가 아니라 기사 흐름, 시장 영향, 글감 가치를 기준으로 정리했습니다.
     </div>
   </section>
   <section class="card" style="height:500px; padding:38px; margin-top:28px;">
@@ -365,7 +375,6 @@ def build_cardnews_pages(issues: list[dict[str, Any]], *, output_dir: str | Path
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # cover + max 5 issue pages + summary = up to 7 pages
     issues = issues[:5]
     total_pages = len(issues) + 2
     scale = int(os.getenv("HEADLINE_IMAGE_SCALE", "2"))
