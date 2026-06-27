@@ -3,36 +3,30 @@ name: Daily AdSense SEO Hot Issue Report
 on:
   workflow_dispatch:
   schedule:
-    # KST 06:00, 11:00, 15:00, 19:00
-    # UTC 21:00(previous day), 02:00, 06:00, 10:00
-    - cron: "0 21,2,6,10 * * *"
+    # KST 06:07, 11:07, 15:07, 19:07
+    # 정각 실행은 GitHub Actions 부하로 지연/누락 가능성이 있어 7분으로 이동
+    # UTC 21:07(previous day), 02:07, 06:07, 10:07
+    - cron: "7 21 * * *"
+    - cron: "7 2 * * *"
+    - cron: "7 6 * * *"
+    - cron: "7 10 * * *"
 
 jobs:
   daily-adsense-seo:
     runs-on: ubuntu-latest
 
     env:
-      # Telegram
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-      # Gemini / AI
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-      # Naver
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-
-      # WordPress
       WP_BASE_URL: ${{ secrets.WP_BASE_URL }}
       WP_USERNAME: ${{ secrets.WP_USERNAME }}
       WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
-
-      # Supabase, optional
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      # Existing hot issue report settings
       LOOKBACK_HOURS: 24
       FALLBACK_LOOKBACK_HOURS: 48
       MAX_KEYWORDS: 30
@@ -51,6 +45,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show trigger schedule
+        run: |
+          echo "Triggered by schedule: ${{ github.event.schedule }}"
+          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
+          TZ=Asia/Seoul date '+KST now: %Y-%m-%d %H:%M:%S'
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -59,15 +59,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-
           if [ -f requirements.dashboard.txt ]; then
             pip install -r requirements.dashboard.txt
           fi
-
           pip install requests feedparser beautifulsoup4 python-dotenv google-generativeai supabase || true
 
       - name: Check Telegram secrets
