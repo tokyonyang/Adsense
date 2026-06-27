@@ -1,106 +1,64 @@
-# v1.11 Workflow 스케줄 분리 패치
+# v1.14 아침 헤드라인 뉴스 이미지 자동화 패치
 
-## 요청 반영 내용
+## 요청 반영 사항
 
-두 종류의 텔레그램 메시지를 모두 실행하도록 구성했습니다.
+- 아침 헤드라인 뉴스를 텔레그램으로 보낼 때
+  - 관련 카드형 이미지도 함께 생성해서 전송
+- 실행 시간을 기존 07:10 → 06:10 으로 1시간 앞당김
 
-```text
-1. Daily AdSense SEO 핫이슈 리포트
-2. 새 대시보드 파이프라인 리포트
-```
-
-단, 새 대시보드 파이프라인은 한국시간 오전 9시와 오후 5시에만 전송되도록 설정했습니다.
-
-## GitHub에 업로드/교체할 파일
+## 업로드/교체할 파일
 
 ```text
-.github/workflows/daily-adsense-seo.yml
-.github/workflows/adsense-dashboard-cron.yml
-.github/workflows/telegram-send-test.yml
-docs/workflow_schedule_v1_11.md
+app/services/telegram_photo_service.py
+app/services/headline_news_image_service.py
+app/jobs/send_headline_news_report.py
+.github/workflows/morning-headline-news.yml
+docs/morning_headline_news_image_v1_14.md
 ```
 
-## 스케줄
-
-### 1. Daily AdSense SEO Hot Issue Report
-
-기존 핫이슈 리포트입니다.
+## 실행 시간
 
 ```text
-KST 06:00 / 11:00 / 15:00 / 19:00
+Morning Headline News Report
+→ KST 06:10
 ```
 
-cron:
+## 전송 결과
+
+텔레그램으로 아래 순서로 전송됩니다.
+
+1. 카드형 헤드라인 뉴스 이미지
+2. 텍스트 헤드라인 뉴스 목록
+
+## 이미지 특징
+
+- 검정/골드 계열 뉴스 카드 레이아웃
+- 10개 뉴스 타일 구성
+- 날짜 표시
+- 핵심 키워드 footer
+- Gemini 요약 기반 short title / bullet summary
+
+## 필요한 환경
+
+GitHub Actions workflow에서 자동으로 아래를 설치합니다.
 
 ```text
-0 21,2,6,10 * * *
+fonts-nanum
+requests
+feedparser
+pillow
+python-dotenv
+google-generativeai
 ```
 
-전송 메시지 형태:
-
-```text
-🔥 오늘의 핫이슈 TOP 10
-```
-
-### 2. AdSense Dashboard Pipeline Report
-
-새 대시보드 파이프라인 리포트입니다.
-
-```text
-KST 09:00 / 17:00
-```
-
-cron:
-
-```text
-0 0,8 * * *
-```
-
-전송 메시지 형태:
-
-```text
-🤖 AdSense SEO 자동 수집 리포트
-📊 경제지표 검색 강화 상태
-```
-
-## 적용 후 확인
-
-GitHub Actions 화면에서 아래 3개 workflow가 보여야 합니다.
-
-```text
-Daily AdSense SEO Hot Issue Report
-AdSense Dashboard Pipeline Report
-Telegram Send Test
-```
-
-## 수동 테스트 순서
-
-1. 텔레그램 연결 테스트
+## 수동 테스트
 
 ```text
 Actions
-→ Telegram Send Test
+→ Morning Headline News Report
 → Run workflow
 ```
 
-2. 기존 핫이슈 리포트 테스트
+## 참고
 
-```text
-Actions
-→ Daily AdSense SEO Hot Issue Report
-→ Run workflow
-```
-
-3. 대시보드 파이프라인 테스트
-
-```text
-Actions
-→ AdSense Dashboard Pipeline Report
-→ Run workflow
-```
-
-## 중복 전송 주의
-
-기존에 `daily-adsense-seo.yml` 또는 `adsense-dashboard-cron.yml` 외에 다른 workflow가 `main.py`나 `app.jobs.run_daily_pipeline`을 실행하고 있으면 메시지가 중복될 수 있습니다.
-
-Actions 목록에서 비슷한 workflow가 있으면 이름과 스케줄을 확인하세요.
+Gemini 요약이 실패하면 제목 기반 fallback 요약으로 이미지를 계속 생성합니다.
