@@ -20,6 +20,10 @@ except Exception:
 
 KST = timezone(timedelta(hours=9))
 
+
+def weekday_ko(dt: datetime) -> str:
+    return "월화수목금토일"[dt.weekday()]
+
 NAVER_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
 GOOGLE_TRENDS_RSS_KR = "https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR"
@@ -313,7 +317,8 @@ def summarize_with_gemini(section_name: str, issues: list[dict[str, Any]]) -> li
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model_name = env("GEMINI_MODEL", "gemini-2.0-flash")
+        model = genai.GenerativeModel(model_name)
         payload = [
             {
                 "topic": i.get("topic"),
@@ -599,7 +604,8 @@ def collect_weather() -> list[dict[str, Any]]:
     if not env_bool("OVERNIGHT_ENABLE_WEATHER", True):
         return []
 
-    regions = [x.strip() for x in env("OVERNIGHT_WEATHER_REGIONS", ",".join(WEATHER_REGIONS)).split(",") if x.strip()]
+    default_regions = "서울,인천,대전,대구,부산,광주,제주"
+    regions = [x.strip() for x in env("OVERNIGHT_WEATHER_REGIONS", default_regions).split(",") if x.strip()]
     rows = []
     today = datetime.now(KST).date().isoformat()
 
@@ -619,7 +625,7 @@ def collect_weather() -> list[dict[str, Any]]:
                     "timezone": "Asia/Seoul",
                     "forecast_days": 1,
                 },
-                timeout=12,
+                timeout=env_int("OVERNIGHT_WEATHER_TIMEOUT", 20),
             )
             weather_resp.raise_for_status()
             wd = weather_resp.json().get("daily", {})
@@ -641,7 +647,7 @@ def collect_weather() -> list[dict[str, Any]]:
                     "timezone": "Asia/Seoul",
                     "forecast_days": 1,
                 },
-                timeout=12,
+                timeout=env_int("OVERNIGHT_WEATHER_TIMEOUT", 20),
             )
             air_resp.raise_for_status()
             hourly = air_resp.json().get("hourly", {})
