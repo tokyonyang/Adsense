@@ -13,6 +13,8 @@ from urllib.parse import quote_plus, urlparse
 
 import requests
 
+from app.services.reference_headline_service import load_reference_headline_seeds
+
 try:
     import feedparser
 except Exception:
@@ -626,6 +628,17 @@ def collect_candidate_keywords() -> list[dict[str, Any]]:
             "source": "finance_seed",
             "trend_score": 8.0,
             "seed_priority": 1.0,
+            "reference_category": "",
+        })
+
+    # v1.30: 사용자가 제공한 주요신문 헤드라인/신문형 seed를 먼저 반영
+    for category, seed in load_reference_headline_seeds():
+        candidates.append({
+            "keyword": seed,
+            "source": "reference_headline",
+            "trend_score": 16.0,
+            "seed_priority": 1.25,
+            "reference_category": category,
         })
 
     trend_limit = env_int("HOT_ISSUE_TREND_LIMIT", 35)
@@ -635,6 +648,7 @@ def collect_candidate_keywords() -> list[dict[str, Any]]:
             "source": "google_trends",
             "trend_score": max(8.0, 42.0 - rank),
             "seed_priority": 0.0,
+            "reference_category": "",
         })
 
     for seed in BALANCED_SEEDS:
@@ -643,6 +657,7 @@ def collect_candidate_keywords() -> list[dict[str, Any]]:
             "source": "balanced_seed",
             "trend_score": 6.0,
             "seed_priority": 0.2,
+            "reference_category": "",
         })
 
     seen = set()
@@ -789,8 +804,8 @@ def make_card_angle(keyword: str, category: str) -> str:
     return "핵심 사건 → 쟁점 → 영향을 받는 사람 → 후속 확인"
 
 
-def score_candidate(keyword: str, source: str, seed_priority: float, trend_score_value: float, articles: list[dict[str, Any]]) -> dict[str, Any]:
-    category = classify_category(keyword, articles)
+def score_candidate(keyword: str, source: str, seed_priority: float, trend_score_value: float, articles: list[dict[str, Any]], reference_category: str = "") -> dict[str, Any]:
+    category = reference_category or classify_category(keyword, articles)
     recent_score = sum(article_recency_score(a) for a in articles[:5])
     evid_score = evidence_score(articles)
     adsense_score_value = adsense_value_score(keyword, articles, category)
@@ -878,6 +893,7 @@ def build_scored_items() -> list[dict[str, Any]]:
             seed_priority=float(candidate.get("seed_priority") or 0),
             trend_score_value=float(candidate.get("trend_score") or 0),
             articles=articles,
+            reference_category=candidate.get("reference_category", ""),
         )
 
         if item["article_count"] > 0:
@@ -899,14 +915,36 @@ def build_scored_items() -> list[dict[str, Any]]:
 # 선발 엔진
 # ============================================================
 
-def is_duplicate_item(item: dict[str, Any], selected: list[dict[str, Any]], threshold: float = 0.42) -> bool:
+def core_issue_tokens(item: dict[str, Any]) -> set[str]:
+    """같은 이슈를 표현만 다르게 쓴 후보를 제거하기 위한 핵심 토큰."""
+    text = f"{item.get('keyword','')} " + " ".join(
+        (a.get("title", "") + " " + a.get("description", "")) for a in item.get("articles", [])[:3]
+    )
+    tokens = tokenize(text)
+    # 너무 일반적인 토큰 제거
+    generic = {"경제", "금융", "증권", "투자", "사회", "국제", "정부", "시장", "관련", "기준", "상승", "하락"}
+    return {t for t in tokens if t not in generic}
+
+
+def is_duplicate_item(item: dict[str, Any], selected: list[dict[str, Any]], threshold: float = 0.34) -> bool:
     text = f"{item.get('keyword','')} " + " ".join(a.get("title", "") for a in item.get("articles", [])[:3])
+    item_tokens = core_issue_tokens(item)
+
     for chosen in selected:
         other = f"{chosen.get('keyword','')} " + " ".join(a.get("title", "") for a in chosen.get("articles", [])[:3])
+        chosen_tokens = core_issue_tokens(chosen)
+
         if compact_key(item.get("keyword", "")) == compact_key(chosen.get("keyword", "")):
             return True
+
         if text_similarity(text, other) >= threshold:
             return True
+
+        # 핵심 토큰 2개 이상 겹치면 같은 이슈로 간주
+        overlap = item_tokens & chosen_tokens
+        if len(overlap) >= 2 and (item.get("slot") == chosen.get("slot") or item.get("category") == chosen.get("category")):
+            return True
+
     return False
 
 

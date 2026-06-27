@@ -149,6 +149,21 @@ def fallback_issue_from_anchor_group(group: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def dedupe_issue_summaries(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result = []
+    seen = set()
+    for issue in issues:
+        key = re.sub(r"[^0-9A-Za-z가-힣]", "", str(issue.get("headline") or issue.get("anchor_title") or "").lower())[:32]
+        if key and key in seen:
+            continue
+        seen.add(key)
+        result.append(issue)
+    for idx, issue in enumerate(result, start=1):
+        issue["rank"] = idx
+    return result
+
+
 def summarize_anchor_groups_with_gemini(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     v1.29:
@@ -162,12 +177,12 @@ def summarize_anchor_groups_with_gemini(groups: list[dict[str, Any]]) -> list[di
     fallback = [fallback_issue_from_anchor_group(g) for g in groups]
     api_key = env("GEMINI_API_KEY")
     if not api_key:
-        return fallback
+        return dedupe_issue_summaries(fallback)
 
     try:
         import google.generativeai as genai
     except Exception:
-        return fallback
+        return dedupe_issue_summaries(fallback)
 
     try:
         genai.configure(api_key=api_key)
@@ -236,7 +251,7 @@ def summarize_anchor_groups_with_gemini(groups: list[dict[str, Any]]) -> list[di
         text = response.text.strip()
         match = re.search(r"\[.*\]", text, re.S)
         if not match:
-            return fallback
+            return dedupe_issue_summaries(fallback)
 
         rows = json.loads(match.group(0))
         fb_by_rank = {int(x["rank"]): x for x in fallback if x.get("rank") is not None}
@@ -286,8 +301,8 @@ def summarize_anchor_groups_with_gemini(groups: list[dict[str, Any]]) -> list[di
                 result.append(fb)
 
         result.sort(key=lambda x: int(x["rank"]))
-        return result[:len(groups)]
+        return dedupe_issue_summaries(result)[:len(groups)]
 
     except Exception as exc:
         print("[anchor summary gemini failed]", exc)
-        return fallback
+        return dedupe_issue_summaries(fallback)

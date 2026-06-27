@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -50,9 +51,33 @@ def _article_from_daily_item(item: dict[str, Any], article: dict[str, Any]) -> d
     }
 
 
+def _simple_issue_key(item: dict[str, Any]) -> str:
+    text = f"{item.get('keyword','')} {item.get('category','')} " + " ".join(
+        a.get("title", "") for a in (item.get("articles") or item.get("news") or [])[:2]
+    )
+    text = text.lower()
+    tokens = re.findall(r"[가-힣A-Za-z0-9]{2,}", text)
+    generic = {"경제", "금융", "증권", "투자", "사회", "국제", "정부", "시장", "관련", "상승", "하락"}
+    tokens = [t for t in tokens if t not in generic][:5]
+    return "|".join(tokens)
+
+
+def _dedupe_hot_items(hot_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen = set()
+    result = []
+    for item in hot_items:
+        key = _simple_issue_key(item)
+        if key and key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
 def hot_items_to_anchor_groups(hot_items: list[dict[str, Any]], *, max_issues: int = 5) -> list[dict[str, Any]]:
     groups = []
-    for idx, item in enumerate(hot_items[:max_issues], start=1):
+    deduped_items = _dedupe_hot_items(hot_items)
+    for idx, item in enumerate(deduped_items[:max_issues], start=1):
         raw_articles = item.get("articles") or item.get("news") or []
         articles = [_article_from_daily_item(item, article) for article in raw_articles[:3]]
 

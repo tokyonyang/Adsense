@@ -29,329 +29,250 @@ def domain(url: str | None) -> str:
         return "news"
 
 
-def cat_color(category: str) -> str:
-    return {
-        "경제·금융": "#f4c542",
-        "증권·투자": "#ff7a45",
-        "산업·기업": "#ffb020",
-        "정책·지원금": "#4d96ff",
-        "정책·생활": "#4d96ff",
-        "부동산·주거금융": "#00c389",
-        "생활·제도": "#00b8d9",
-        "시사·정치": "#4d96ff",
-        "사회·사건": "#00c389",
-        "국제": "#a66bff",
-        "국제·안전": "#a66bff",
-        "날씨·안전": "#00b8d9",
-        "건강·의료": "#22c55e",
-        "교육·입시": "#22c55e",
-        "연예·문화": "#ec4899",
-        "스포츠": "#22c55e",
-    }.get(str(category), "#f4c542")
+def slot_label(issue: dict[str, Any]) -> str:
+    return str(issue.get("slot") or issue.get("category") or "주요").replace("·", "\n").replace("/", "\n")
 
 
-def base_css() -> str:
-    return """
-@font-face { font-family: NanumGothic; src: local('NanumGothic'); }
-* { box-sizing: border-box; }
-body {
+def cat_color(category: str) -> tuple[str, str]:
+    mapping = {
+        "경제·금융": ("#f5b531", "#1a1f26"),
+        "증권·투자": ("#f5b531", "#171d25"),
+        "산업·기업": ("#f5b531", "#171d25"),
+        "정책·지원금": ("#ff3131", "#151515"),
+        "정책·생활": ("#ff3131", "#151515"),
+        "시사·정치": ("#ff3131", "#151515"),
+        "사회·사건": ("#ff3131", "#151515"),
+        "국제": ("#59a9ff", "#101820"),
+        "국제·안전": ("#59a9ff", "#101820"),
+        "날씨·안전": ("#59a9ff", "#101820"),
+        "생활·제도": ("#b7dec0", "#25362c"),
+        "건강·의료": ("#b7dec0", "#25362c"),
+        "교육·입시": ("#b7dec0", "#25362c"),
+        "연예·문화": ("#b7dec0", "#25362c"),
+        "스포츠": ("#b7dec0", "#25362c"),
+    }
+    return mapping.get(str(category), ("#f5b531", "#1a1f26"))
+
+
+def base_css(width: int, height: int) -> str:
+    return f"""
+@font-face {{ font-family: NanumGothic; src: local('NanumGothic'); }}
+* {{ box-sizing: border-box; }}
+body {{
   margin: 0;
-  width: 1080px;
-  height: 1350px;
+  width: {width}px;
+  height: {height}px;
   overflow: hidden;
   font-family: NanumGothic, 'Noto Sans CJK KR', 'Apple SD Gothic Neo', sans-serif;
-  color: #f7f7f7;
+  color: #fff;
+  background:#050505;
+}}
+.page {{
+  width:{width}px; height:{height}px; position:relative; overflow:hidden;
   background:
-    radial-gradient(circle at 20% 4%, rgba(246,197,66,.18), transparent 25%),
-    radial-gradient(circle at 88% 28%, rgba(255,122,69,.11), transparent 26%),
-    linear-gradient(180deg, #050505 0%, #101010 45%, #050505 100%);
-}
-.page {
-  width: 1080px;
-  height: 1350px;
-  position: relative;
-  padding: 42px 46px 38px;
-}
-.page::before {
-  content: "";
-  position: absolute; inset: 0;
+    radial-gradient(circle at 15% 10%, rgba(255,202,64,.20), transparent 26%),
+    radial-gradient(circle at 85% 28%, rgba(255,80,60,.15), transparent 28%),
+    linear-gradient(135deg, #20242a 0%, #0b0d10 48%, #050505 100%);
+}}
+.page::before {{
+  content:""; position:absolute; inset:0;
   background-image:
-    linear-gradient(rgba(255,255,255,.026) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.026) 1px, transparent 1px);
-  background-size: 44px 44px;
-  opacity: .75;
-  pointer-events: none;
-}
-.header {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 255px;
-  align-items: start;
-  margin-bottom: 36px;
-}
-.brand { display: flex; align-items: center; gap: 18px; }
-.menu-icon {
-  width: 74px; height: 74px; border: 3px solid #f4c542; border-radius: 17px;
-  display: grid; place-items: center; color: #f4c542; font-size: 42px; font-weight: 900;
-  box-shadow: 0 0 22px rgba(246,197,66,.18);
-}
-.title { font-size: 54px; line-height: 1; font-weight: 900; letter-spacing: -3px; }
-.title .gold { color: #f4c542; text-shadow: 0 0 22px rgba(246,197,66,.23); }
-.sub { margin-top: 12px; font-size: 22px; color: #f1d57b; letter-spacing: 7px; }
-.date {
-  justify-self: end; border: 2px solid #f4c542; border-radius: 17px; padding: 16px 20px;
-  font-size: 25px; font-weight: 900; color: #fff1b8; text-align: center;
-  box-shadow: inset 0 0 20px rgba(246,197,66,.07), 0 0 20px rgba(246,197,66,.13);
-}
-.page-no {
-  position: absolute; top: 112px; left: 0; right: 0; text-align: center;
-  font-size: 24px; color: #e9d38b; letter-spacing: 5px;
-}
-.page-no::before, .page-no::after {
-  content: ""; display: inline-block; width: 135px; height: 1px; background: linear-gradient(90deg, transparent, #f4c542, transparent);
-  vertical-align: middle; margin: 0 18px;
-}
-.gold { color: #f4c542; }
-.card {
-  position: relative; border: 2px solid rgba(246,197,66,.9); border-radius: 26px;
-  background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
-  box-shadow: 0 25px 55px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.05);
-  overflow: hidden;
-}
-.card::before {
-  content: ""; position:absolute; left: 24px; right:24px; top:0; height:2px;
-  background: linear-gradient(90deg, transparent, rgba(246,197,66,.95), transparent);
-}
-.badge-num {
-  width: 88px; height: 88px; border: 2px solid #f4c542; border-radius: 15px;
-  display: grid; place-items:center; color:#f4c542; font-size:58px; font-weight:900; font-family: Georgia, serif;
-  background: rgba(0,0,0,.25); box-shadow:0 0 20px rgba(246,197,66,.18);
-}
-.pill {
-  border: 2px solid var(--accent); color: var(--accent); border-radius:999px;
-  padding:8px 28px; font-size:24px; font-weight:900; background:rgba(0,0,0,.24);
-}
-.section-label {
-  display:flex; align-items:center; gap:12px; color:#f4c542; font-size:26px; font-weight:900;
-  margin: 24px 0 14px;
-}
-.section-label::after {
-  content:""; height:1px; flex:1; background: linear-gradient(90deg, rgba(246,197,66,.85), transparent);
-}
-.bullets { list-style:none; padding:0; margin:0; }
-.bullets li {
-  position:relative; padding-left:28px; margin:15px 0; font-size:27px; line-height:1.36; color:rgba(255,255,255,.92); letter-spacing:-.9px;
-}
-.bullets li::before {
-  content:""; position:absolute; left:0; top:16px; width:9px; height:9px; border-radius:50%; background:#f4c542;
-  box-shadow:0 0 12px rgba(246,197,66,.65);
-}
-.insight-box {
-  margin-top:24px; border:1px solid rgba(246,197,66,.58); border-radius:18px; padding:22px 26px;
-  background:linear-gradient(135deg, rgba(246,197,66,.08), rgba(255,255,255,.02));
-}
-.insight-title { font-size:25px; color:#f4c542; font-weight:900; }
-.insight-text { margin-top:11px; font-size:28px; line-height:1.42; letter-spacing:-.8px; }
-.chart-box {
-  margin-top:20px; display:grid; grid-template-columns: 1fr 425px; gap:24px; align-items:center;
-  border:1px solid rgba(255,255,255,.12); border-radius:18px; padding:18px 20px;
-  background:rgba(0,0,0,.28);
-}
-.chart-title { font-size:24px; color:#f4c542; font-weight:900; margin-bottom:10px; }
-.chart-caption { font-size:23px; color:#f2f2f2; line-height:1.35; }
-.chart-values { font-size:20px; color:#e5d59a; margin-top:8px; }
-.footer-row {
-  position:absolute; left:0; right:0; bottom:0; height:84px; border-top:1px solid rgba(246,197,66,.45);
-  display:flex; align-items:center; gap:18px; padding:0 28px; color:#f7f0d1; font-size:22px; font-weight:800;
-  background:rgba(0,0,0,.22);
-}
-.divider { width:1px; height:32px; background:rgba(246,197,66,.55); }
-.keyword-chip {
-  display:inline-block; margin:6px 7px 0 0; padding:8px 14px; border:1px solid rgba(246,197,66,.35);
-  border-radius:999px; background:rgba(255,255,255,.06); font-size:21px;
-}
+    linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+  background-size:42px 42px;
+  opacity:.45;
+}}
+.bg-visual {{
+  position:absolute; inset:0; overflow:hidden;
+}}
+.bg-visual .shape1 {{
+  position:absolute; left:-80px; top:100px; width:680px; height:420px;
+  background:linear-gradient(135deg, rgba(255,48,48,.78), rgba(255,177,49,.25));
+  clip-path: polygon(0 15%, 70% 0, 100% 45%, 56% 70%, 70% 100%, 5% 82%);
+  filter: drop-shadow(0 30px 50px rgba(0,0,0,.45));
+  opacity:.72;
+}}
+.bg-visual .shape2 {{
+  position:absolute; right:-140px; top:20px; width:620px; height:620px;
+  border-radius:50%; background:radial-gradient(circle, rgba(255,209,84,.42), rgba(255,209,84,.06) 55%, transparent 70%);
+  opacity:.75;
+}}
+.bg-visual .shape3 {{
+  position:absolute; right:60px; top:160px; width:220px; height:220px;
+  border:8px solid rgba(255,255,255,.16); border-radius:32px; transform:rotate(18deg);
+}}
+.bg-visual .zigzag {{
+  position:absolute; left:80px; top:155px; font-size:190px; color:rgba(255,255,255,.18); font-weight:900; transform:rotate(-12deg);
+}}
+.cover-title {{
+  position:absolute; left:66px; top:90px; right:80px;
+  font-size:84px; line-height:1.05; font-weight:900; letter-spacing:-5px;
+}}
+.cover-sub {{ position:absolute; left:70px; top:300px; font-size:30px; color:#f5b531; letter-spacing:8px; }}
+.cover-box {{
+  position:absolute; left:60px; right:60px; bottom:140px; padding:34px;
+  border:3px solid rgba(255,255,255,.75); background:rgba(0,0,0,.46);
+}}
+.cover-list {{ list-style:none; padding:0; margin:0; }}
+.cover-list li {{ font-size:31px; line-height:1.45; margin:12px 0; }}
+.ribbon {{
+  position:absolute; top:0; right:60px; width:122px; min-height:204px;
+  background:var(--accent); color:var(--dark); z-index:10;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-weight:900; text-align:center; padding:18px 10px;
+}}
+.ribbon .cat {{ font-size:34px; line-height:1.05; white-space:pre-line; letter-spacing:-2px; }}
+.ribbon .line {{ width:70px; height:5px; background:var(--dark); margin:18px 0; }}
+.ribbon .num {{ font-size:42px; letter-spacing:2px; }}
+.poster-frame {{
+  position:absolute; inset:28px; border:3px solid rgba(255,255,255,.65); z-index:2;
+}}
+.content {{
+  position:absolute; left:66px; right:58px; bottom:50px; z-index:4;
+}}
+.quote {{
+  font-size:168px; color:var(--accent); line-height:.5; font-family:Georgia, serif; opacity:.95; margin-left:-6px;
+}}
+.main-title {{
+  margin-top:-26px; font-size:64px; line-height:1.16; font-weight:900; letter-spacing:-4px;
+  text-shadow:0 4px 18px rgba(0,0,0,.55);
+}}
+.sub-title {{
+  margin-top:26px; color:var(--accent); font-size:36px; line-height:1.26; font-weight:900; letter-spacing:-2px;
+}}
+.summary {{
+  margin-top:18px; font-size:27px; line-height:1.43; color:#f2f2f2; letter-spacing:-1px;
+}}
+.summary div {{ margin:6px 0; }}
+.insight {{
+  margin-top:18px; border-left:5px solid var(--accent); padding-left:18px;
+  font-size:28px; line-height:1.34; color:#fff; font-weight:800;
+}}
+.chart {{
+  margin-top:20px; display:grid; grid-template-columns:1fr 300px; gap:18px; align-items:center;
+  border:1px solid rgba(255,255,255,.25); background:rgba(0,0,0,.48); padding:14px 16px;
+}}
+.chart-title {{ color:var(--accent); font-size:22px; font-weight:900; }}
+.chart-caption {{ margin-top:6px; font-size:20px; line-height:1.25; }}
+.footer {{
+  position:absolute; left:30px; right:30px; bottom:14px; z-index:5;
+  display:flex; justify-content:space-between; font-size:20px; color:#f7f7f7; opacity:.95;
+}}
+.keyword-line {{ position:absolute; left:66px; right:58px; bottom:18px; z-index:4; font-size:19px; color:#f6f0d4; opacity:.95; }}
+.summary-page .content {{ top:110px; bottom:auto; }}
 """
 
 
-def page_shell(body: str) -> str:
-    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>{base_css()}</style></head><body>{body}</body></html>"""
+def page_shell(body: str, width: int, height: int) -> str:
+    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>{base_css(width,height)}</style></head><body>{body}</body></html>"""
 
 
-def header_html(page_no: str = "", subtitle: str = "아침 브리핑") -> str:
+def visual_bg() -> str:
+    return """
+<div class="bg-visual">
+  <div class="shape1"></div>
+  <div class="shape2"></div>
+  <div class="shape3"></div>
+  <div class="zigzag">↘</div>
+</div>
+"""
+
+
+def cover_page(issues: list[dict[str, Any]], total_pages: int, width: int, height: int) -> str:
     now = datetime.now(KST)
-    page = f'<div class="page-no">{esc(page_no)}</div>' if page_no else ""
-    return f"""
-<header class="header">
-  <div>
-    <div class="brand">
-      <div class="menu-icon">☰</div>
-      <div>
-        <div class="title">오늘의 <span class="gold">헤드라인 뉴스</span></div>
-        <div class="sub">{esc(subtitle)}</div>
-      </div>
-    </div>
-  </div>
-  <div class="date">📅 {now:%Y.%m.%d}<br>({weekday_ko(now)})</div>
-</header>
-{page}
-"""
-
-
-def cover_page(issues: list[dict[str, Any]], total_pages: int) -> str:
-    keywords = []
-    for issue in issues:
-        for k in issue.get("keywords") or []:
-            if k not in keywords:
-                keywords.append(k)
-    keywords = keywords[:8] or ["경제", "증시", "정책", "산업", "국제", "생활"]
-
-    top3 = issues[:3]
-    top3_html = "".join(
-        f'<li><b>{i+1}</b> {esc(x.get("headline"))}</li>'
-        for i, x in enumerate(top3)
-    )
-    keyword_html = "".join(f"<span class='keyword-chip'>{esc(k)}</span>" for k in keywords)
-
+    top_html = "".join(f"<li>{i+1}. {esc(x.get('headline'))}</li>" for i, x in enumerate(issues[:5]))
     body = f"""
 <main class="page">
-  {header_html("", "아침 브리핑")}
-  <section style="position:relative; margin-top:90px;">
-    <div style="font-size:86px; font-weight:900; letter-spacing:-5px; line-height:1.05;">
-      오늘의 이슈를<br>
-      <span class="gold">흐름과 전망</span>으로 정리
-    </div>
-    <p style="margin-top:28px; font-size:30px; line-height:1.55; color:#eee;">
-      Daily Hot Issue 편집 엔진이 고른 핵심 뉴스를<br>
-      기사 흐름·시장 영향·체크포인트 중심으로 압축했습니다.
-    </p>
+  {visual_bg()}
+  <div class="poster-frame"></div>
+  <div class="cover-title">오늘의<br><span style="color:#f5b531;">헤드라인 뉴스</span></div>
+  <div class="cover-sub">아침 브리핑 · {now:%Y.%m.%d} ({weekday_ko(now)})</div>
+  <section class="cover-box">
+    <ul class="cover-list">{top_html}</ul>
   </section>
-  <section class="card" style="height:360px; padding:36px; margin-top:46px;">
-    <div class="section-label">📌 오늘 TOP 이슈</div>
-    <ul class="bullets" style="margin-top:10px;">{top3_html}</ul>
-  </section>
-  <section class="card" style="height:230px; padding:34px; margin-top:28px;">
-    <div style="font-size:34px; font-weight:900; color:#f4c542;">핵심 키워드</div>
-    <div style="margin-top:24px;">{keyword_html}</div>
-  </section>
-  <div style="position:absolute; left:46px; right:46px; bottom:42px; font-size:25px; color:#e8d48a; text-align:center;">
-    총 {total_pages}장 구성 · 원문 링크는 마지막 텍스트 메시지에서 제공
-  </div>
+  <div class="footer"><span>카카오톡 오픈채팅 “비티의 경제” 검색!</span><span>© 비티의 인사이트 노트</span></div>
 </main>
 """
-    return page_shell(body)
+    return page_shell(body, width, height)
 
 
 def chart_html(issue: dict[str, Any]) -> str:
     chart = issue.get("chart") or {}
-    if not chart:
+    if not chart or not chart.get("available") or not chart.get("svg"):
         return ""
-
-    if not chart.get("available") or not chart.get("svg"):
-        return f"""
-<section class="chart-box">
-  <div>
-    <div class="chart-title">📈 관련 지표</div>
-    <div class="chart-caption">{esc(chart.get("title") or "시장 지표")} 데이터 연결 대기</div>
-  </div>
-  <div style="height:150px; display:grid; place-items:center; color:#e5d59a; border:1px dashed rgba(246,197,66,.35); border-radius:14px;">
-    차트 데이터 확인 중
-  </div>
-</section>
-"""
-
     return f"""
-<section class="chart-box">
+<section class="chart">
   <div>
-    <div class="chart-title">📈 {esc(chart.get("title"))}</div>
+    <div class="chart-title">관련 지표 · {esc(chart.get("title"))}</div>
     <div class="chart-caption">{esc(chart.get("caption"))}</div>
-    <div class="chart-values">시작 {esc(chart.get("start"))} → 최근 {esc(chart.get("end"))} {esc(chart.get("unit"))}</div>
   </div>
   <div>{chart.get("svg")}</div>
 </section>
 """
 
 
-def issue_page(issue: dict[str, Any], page_index: int, total_pages: int) -> str:
+def issue_page(issue: dict[str, Any], page_index: int, total_pages: int, width: int, height: int) -> str:
     category = issue.get("category") or "주요"
-    accent = cat_color(category)
-    keywords = issue.get("keywords") or []
-    keyword_line = " / ".join(str(k) for k in keywords[:4]) or "주요 이슈"
-    links = issue.get("links") or []
-    source_line = " · ".join(domain(x.get("url")) for x in links[:3]) or "관련 기사 묶음"
-
-    bullets = "".join(f"<li>{esc(line)}</li>" for line in (issue.get("summary_lines") or [])[:3])
-    insight = issue.get("insight") or "기사 흐름과 시장 영향을 함께 확인할 필요가 있습니다."
+    accent, dark = cat_color(category)
+    ribbon = slot_label(issue)
+    num = str(issue.get("rank", page_index - 1)).zfill(2)
+    headline = esc(issue.get("headline"))
+    anchor = esc(issue.get("anchor_title") or "")
+    lines = [esc(x) for x in (issue.get("summary_lines") or [])[:3]]
+    while len(lines) < 3:
+        lines.append("")
+    insight = esc(issue.get("insight") or "")
+    keyword_line = " / ".join(str(k) for k in (issue.get("keywords") or [])[:4])
+    source_line = " · ".join(domain(x.get("url")) for x in (issue.get("links") or [])[:3])
     chart_block = chart_html(issue)
 
     body = f"""
-<main class="page">
-  {header_html(f"{page_index} / {total_pages}", "아침 브리핑")}
-  <section class="card" style="--accent:{accent}; height:1030px; padding:42px; margin-top:92px;">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-      <div class="badge-num">{issue.get("rank", page_index-1)}</div>
-      <div class="pill">{esc(category)}</div>
+<main class="page" style="--accent:{accent};--dark:{dark};">
+  {visual_bg()}
+  <div class="poster-frame"></div>
+  <aside class="ribbon">
+    <div class="cat">{esc(ribbon)}</div>
+    <div class="line"></div>
+    <div class="num">{num}</div>
+  </aside>
+  <section class="content">
+    <div class="quote">“</div>
+    <div class="main-title">{headline}</div>
+    <div class="sub-title">{anchor}</div>
+    <div class="summary">
+      <div>{lines[0]}</div>
+      <div>{lines[1]}</div>
+      <div>{lines[2]}</div>
     </div>
-    <div style="margin-top:38px; font-size:47px; line-height:1.22; letter-spacing:-2.6px; font-weight:900;">
-      {esc(issue.get("headline"))}
-    </div>
-    <div class="section-label">▤ 기사 흐름 3줄 요약</div>
-    <ul class="bullets">{bullets}</ul>
     {chart_block}
-    <section class="insight-box">
-      <div class="insight-title">전망 인사이트</div>
-      <div class="insight-text">{esc(insight)}</div>
-    </section>
-    <div class="footer-row">
-      <span style="color:#f4c542;">🏷 관련 키워드</span>
-      <span>{esc(keyword_line)}</span>
-      <span class="divider"></span>
-      <span style="color:#f4c542;">🔗 출처</span>
-      <span>{esc(source_line)}</span>
-    </div>
+    <div class="insight">{insight}</div>
   </section>
+  <div class="keyword-line">관련 키워드 · {esc(keyword_line)} &nbsp;&nbsp; | &nbsp;&nbsp; 출처 · {esc(source_line)}</div>
+  <div class="footer"><span>카카오톡 오픈채팅 “비티의 경제” 검색!</span><span>© 비티의 인사이트 노트</span></div>
 </main>
 """
-    return page_shell(body)
+    return page_shell(body, width, height)
 
 
-def summary_page(issues: list[dict[str, Any]], page_index: int, total_pages: int) -> str:
-    cats = {}
-    for issue in issues:
-        cats[issue.get("category", "주요")] = cats.get(issue.get("category", "주요"), 0) + 1
-    top_cat = sorted(cats.items(), key=lambda x: x[1], reverse=True)
-    top_cat_text = " / ".join(f"{c} {n}건" for c, n in top_cat[:4]) or "주요 이슈"
-
-    issue_list = "".join(
-        f"<li><b>{esc(issue.get('category'))}</b> · {esc(issue.get('headline'))}</li>"
-        for issue in issues[:5]
-    )
-
+def summary_page(issues: list[dict[str, Any]], page_index: int, total_pages: int, width: int, height: int) -> str:
+    items = "".join(f"<li>{i+1}. {esc(x.get('headline'))}</li>" for i, x in enumerate(issues[:6]))
     body = f"""
-<main class="page">
-  {header_html(f"{page_index} / {total_pages}", "마무리 요약")}
-  <section style="position:relative; margin-top:96px;">
-    <div style="font-size:84px; font-weight:900; letter-spacing:-5px; color:#f4c542;">오늘의 흐름 요약</div>
+<main class="page summary-page" style="--accent:#f5b531;--dark:#1a1f26;">
+  {visual_bg()}
+  <div class="poster-frame"></div>
+  <section class="content">
+    <div class="main-title">오늘의 흐름 요약</div>
+    <div class="sub-title">중복 이슈를 제거하고 핵심 흐름만 남겼습니다</div>
+    <ul class="cover-list" style="margin-top:42px;">{items}</ul>
+    <div class="insight" style="margin-top:42px;">경제·금융, 증시, 산업, 정책 이슈를 중심으로 생활 영향과 시장 변수를 함께 점검하세요.</div>
   </section>
-  <section class="card" style="height:440px; padding:38px; margin-top:42px;">
-    <div class="section-label">📊 카테고리 흐름</div>
-    <div style="font-size:34px; line-height:1.5; margin-top:22px;">{esc(top_cat_text)}</div>
-    <div style="font-size:25px; line-height:1.6; color:#e7e7e7; margin-top:30px;">
-      단순 키워드가 아니라 기사 흐름, 시장 영향, 글감 가치를 기준으로 정리했습니다.
-    </div>
-  </section>
-  <section class="card" style="height:500px; padding:38px; margin-top:28px;">
-    <div class="section-label">✅ 오늘 체크 포인트</div>
-    <ul class="bullets">{issue_list}</ul>
-  </section>
-  <div style="position:absolute; left:46px; right:46px; bottom:42px; font-size:25px; color:#e8d48a; text-align:center;">
-    원문 링크는 함께 전송되는 텍스트 메시지에서 확인할 수 있습니다.
-  </div>
+  <div class="footer"><span>카카오톡 오픈채팅 “비티의 경제” 검색!</span><span>© 비티의 인사이트 노트</span></div>
 </main>
 """
-    return page_shell(body)
+    return page_shell(body, width, height)
 
 
-async def render_html_to_png(html_content: str, output_path: Path, *, scale: int = 2) -> str:
+async def render_html_to_png(html_content: str, output_path: Path, *, width: int, height: int, scale: int = 2) -> str:
     from playwright.async_api import async_playwright
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -361,7 +282,7 @@ async def render_html_to_png(html_content: str, output_path: Path, *, scale: int
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         page = await browser.new_page(
-            viewport={"width": 1080, "height": 1350},
+            viewport={"width": width, "height": height},
             device_scale_factor=scale,
         )
         await page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
@@ -375,20 +296,22 @@ def build_cardnews_pages(issues: list[dict[str, Any]], *, output_dir: str | Path
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    issues = issues[:5]
-    total_pages = len(issues) + 2
+    width = int(os.getenv("HEADLINE_IMAGE_WIDTH", "1080"))
+    height = int(os.getenv("HEADLINE_IMAGE_HEIGHT", "1080"))
     scale = int(os.getenv("HEADLINE_IMAGE_SCALE", "2"))
 
-    html_pages = [cover_page(issues, total_pages)]
+    issues = issues[:5]
+    total_pages = len(issues) + 2
+    html_pages = [cover_page(issues, total_pages, width, height)]
     for idx, issue in enumerate(issues, start=2):
-        html_pages.append(issue_page(issue, idx, total_pages))
-    html_pages.append(summary_page(issues, total_pages, total_pages))
+        html_pages.append(issue_page(issue, idx, total_pages, width, height))
+    html_pages.append(summary_page(issues, total_pages, total_pages, width, height))
 
     async def run_all() -> list[str]:
         paths = []
         for i, html_content in enumerate(html_pages, start=1):
             out = output_dir / f"headline_cardnews_{i:02d}.png"
-            await render_html_to_png(html_content, out, scale=scale)
+            await render_html_to_png(html_content, out, width=width, height=height, scale=scale)
             paths.append(str(out))
         return paths
 
