@@ -1,28 +1,29 @@
-# v1.19 헤드라인 뉴스 이미지 정합성 개선 패치
+# v1.20 아침 헤드라인 최신성/정합성 최종 보강 패치
 
 ## 교체할 파일
 
 ```text
 app/jobs/send_headline_news_report.py
-app/services/headline_news_image_service.py
-docs/morning_headline_image_alignment_v1_19.md
+.github/workflows/morning-headline-news.yml
+docs/morning_headline_freshness_fix_v1_20.md
 ```
 
 ## 해결하는 문제
 
-- 헤드라인 이미지 카드 내용이 실제 기사와 잘 맞지 않는 문제
-- placeholder 문구가 반복되는 문제
-- 텍스트 메시지와 이미지 카드가 다른 데이터를 쓰는 문제
+- 오래된 뉴스가 헤드라인 이미지에 섞이는 문제
+- 06/27 리포트에 05월, 04월, 03월 기사 포함
+- 후보가 부족할 때 무리하게 오래된 기사로 채우는 문제
 
 ## 핵심 변경
 
-1. 이미지 카드 제목 = `headline_text` 우선
-2. 카드 bullet = 기사 내용 기반 `summaries`
-3. 상투 문구 자동 제거
-4. fallback도 기사 description 기반 생성
-5. 실행 로그에 `briefs preview` 출력
+```text
+24시간 이내 뉴스 우선
+부족하면 48시간까지만 확장
+48시간보다 오래된 뉴스는 절대 사용 금지
+부족하면 부족한 개수 그대로 전송
+```
 
-## 테스트 방법
+## 적용 후 테스트
 
 ```text
 Actions
@@ -30,9 +31,13 @@ Actions
 → Run workflow
 ```
 
-실행 후:
-1. 텔레그램 텍스트 메시지 확인
-2. 텔레그램 이미지 카드 확인
-3. GitHub Actions 로그에서 `briefs preview` 확인
+GitHub Actions 로그에서 아래를 확인하세요.
 
-세 결과가 서로 비슷한 내용이면 정상입니다.
+```text
+[headline freshness] primary 24h candidates:
+[headline freshness] fallback 48h candidates:
+[headline selected]
+[briefs preview]
+```
+
+`briefs preview`의 `published_at`이 모두 최근 48시간 이내면 정상입니다.
