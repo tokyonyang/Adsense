@@ -5,7 +5,6 @@ on:
   schedule:
     # KST 06:10
     # UTC 21:10(previous day)
-    # 정각 부하 회피를 위해 06:00이 아니라 06:10으로 설정
     - cron: "10 21 * * *"
 
 jobs:

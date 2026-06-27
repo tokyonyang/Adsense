@@ -1,0 +1,62 @@
+name: AdSense Dashboard Pipeline Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # KST 09:17, 17:17
+    # UTC 00:17, 08:17
+    - cron: "17 0 * * *"
+    - cron: "17 8 * * *"
+
+jobs:
+  run-dashboard-pipeline:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      WP_BASE_URL: ${{ secrets.WP_BASE_URL }}
+      WP_USERNAME: ${{ secrets.WP_USERNAME }}
+      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show trigger schedule
+        run: |
+          echo "Triggered by schedule: ${{ github.event.schedule }}"
+          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
+          TZ=Asia/Seoul date '+KST now: %Y-%m-%d %H:%M:%S'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.dashboard.txt ]; then
+            pip install -r requirements.dashboard.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install requests supabase python-dotenv google-generativeai || true
+
+      - name: Validate Telegram secrets
+        run: |
+          python -m app.jobs.send_telegram_test
+
+      - name: Preview event boost config
+        run: |
+          python -m app.jobs.run_event_boost_preview
+
+      - name: Run daily dashboard pipeline and Telegram report
+        run: |
+          python -m app.jobs.run_daily_pipeline

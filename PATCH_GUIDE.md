@@ -1,64 +1,21 @@
-# v1.14 아침 헤드라인 뉴스 이미지 자동화 패치
+# v1.15 최종 통합본 안내
 
-## 요청 반영 사항
+이번 통합본은 지금까지 분리해서 적용하던 패치를 한 번에 모은 최종본입니다.
 
-- 아침 헤드라인 뉴스를 텔레그램으로 보낼 때
-  - 관련 카드형 이미지도 함께 생성해서 전송
-- 실행 시간을 기존 07:10 → 06:10 으로 1시간 앞당김
+## 포함 기능
+- 기존 핫이슈 TOP 10 텔레그램 자동 전송
+- 대시보드 파이프라인 자동 전송
+- 아침 헤드라인 뉴스 이미지 + 텍스트 자동 전송
+- 텔레그램 수동 연결 테스트
 
-## 업로드/교체할 파일
+## GitHub 업로드 대상
+ZIP 전체를 기준으로 동일 경로에 업로드/교체하면 됩니다.
 
-```text
-app/services/telegram_photo_service.py
-app/services/headline_news_image_service.py
-app/jobs/send_headline_news_report.py
-.github/workflows/morning-headline-news.yml
-docs/morning_headline_news_image_v1_14.md
-```
-
-## 실행 시간
-
-```text
-Morning Headline News Report
-→ KST 06:10
-```
-
-## 전송 결과
-
-텔레그램으로 아래 순서로 전송됩니다.
-
-1. 카드형 헤드라인 뉴스 이미지
-2. 텍스트 헤드라인 뉴스 목록
-
-## 이미지 특징
-
-- 검정/골드 계열 뉴스 카드 레이아웃
-- 10개 뉴스 타일 구성
-- 날짜 표시
-- 핵심 키워드 footer
-- Gemini 요약 기반 short title / bullet summary
-
-## 필요한 환경
-
-GitHub Actions workflow에서 자동으로 아래를 설치합니다.
-
-```text
-fonts-nanum
-requests
-feedparser
-pillow
-python-dotenv
-google-generativeai
-```
-
-## 수동 테스트
-
-```text
-Actions
-→ Morning Headline News Report
-→ Run workflow
-```
+## 수동 검수 순서
+1. Telegram Send Test
+2. Morning Headline News Report
+3. Daily AdSense SEO Hot Issue Report
+4. AdSense Dashboard Pipeline Report
 
 ## 참고
-
-Gemini 요약이 실패하면 제목 기반 fallback 요약으로 이미지를 계속 생성합니다.
+자동 실행 안정성을 위해 정각 대신 07분/10분/17분 스케줄을 사용합니다.

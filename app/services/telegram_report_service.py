@@ -6,7 +6,6 @@ from typing import Any
 
 import requests
 
-
 TELEGRAM_API_BASE = "https://api.telegram.org/bot"
 
 

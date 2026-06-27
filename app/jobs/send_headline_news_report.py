@@ -16,7 +16,6 @@ import requests
 from app.services.headline_news_image_service import render_headline_news_image
 from app.services.telegram_photo_service import send_telegram_photo
 
-
 KST = timezone(timedelta(hours=9))
 NAVER_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -186,11 +185,11 @@ def build_fallback_brief(headlines: list[dict[str, Any]]) -> list[dict[str, Any]
         title = item["title"]
         category = item.get("category", "주요")
         short_title = title if len(title) <= 24 else title[:24].rstrip() + "…"
-        summaries = []
-        summaries.append(title if len(title) <= 30 else title[:30].rstrip() + "…")
-        summaries.append(f"{category} 분야 주요 이슈로 관심 확대")
-        summaries.append("상세 내용은 본문 기사 확인 필요")
-
+        summaries = [
+            title if len(title) <= 30 else title[:30].rstrip() + "…",
+            f"{category} 분야 주요 이슈로 관심 확대",
+            "상세 내용은 본문 기사 확인 필요",
+        ]
         keywords = []
         for token in re.findall(r"[가-힣A-Za-z0-9]{2,}", title):
             if token not in keywords and len(token) <= 10:
@@ -222,24 +221,20 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
-        payload = [
-            {"index": idx + 1, "category": h.get("category", "주요"), "title": h["title"]}
-            for idx, h in enumerate(headlines)
-        ]
+        payload = [{"index": i + 1, "category": h.get("category", "주요"), "title": h["title"]} for i, h in enumerate(headlines)]
         prompt = f"""
 다음 한국 뉴스 헤드라인 10개를 카드형 뉴스 이미지에 넣을 수 있게 요약해줘.
 반드시 JSON 배열만 반환해.
-각 원소는 아래 키를 반드시 포함해:
-index, short_title, highlight, summaries, keywords, icon
+각 원소는 index, short_title, highlight, summaries, keywords, icon 키를 포함해야 해.
 
 규칙:
-- short_title: 18자 이내, 짧은 제목
-- highlight: 강조 문구 1개, 16자 이내, 없으면 빈 문자열
-- summaries: 3개 배열, 각 항목 18자 이내
+- short_title: 18자 이내
+- highlight: 16자 이내, 없으면 빈 문자열
+- summaries: 3개 배열, 각 18자 이내
 - keywords: 2~3개 배열
-- icon: 2자 이내 이모지 또는 짧은 텍스트
+- icon: 2자 이내
 - 한국어만 사용
-- 원문 헤드라인의 사실을 벗어나지 말 것
+- 사실 왜곡 금지
 - 마크다운 금지
 
 입력:
@@ -250,26 +245,25 @@ index, short_title, highlight, summaries, keywords, icon
         m = re.search(r"\[.*\]", text, re.S)
         if not m:
             return build_fallback_brief(headlines)
+
         arr = json.loads(m.group(0))
-        mapped = []
         by_index = {i+1: h for i, h in enumerate(headlines)}
+        mapped = []
         for row in arr:
-            source = by_index.get(int(row.get("index", 0)))
-            if not source:
+            src = by_index.get(int(row.get("index", 0)))
+            if not src:
                 continue
             mapped.append({
-                **source,
-                "short_title": str(row.get("short_title") or source["title"])[:28],
+                **src,
+                "short_title": str(row.get("short_title") or src["title"])[:28],
                 "highlight": str(row.get("highlight") or "")[:20],
                 "summaries": [str(x)[:24] for x in (row.get("summaries") or [])][:3],
                 "keywords": [str(x)[:12] for x in (row.get("keywords") or [])][:3],
-                "icon": str(row.get("icon") or _default_icon(source.get("category", "주요")))[:3],
+                "icon": str(row.get("icon") or _default_icon(src.get("category", "주요")))[:3],
             })
-        if len(mapped) >= max(6, len(headlines) // 2):
-            # preserve original order by title list
+        if mapped:
             order = {h["title"]: i for i, h in enumerate(headlines)}
             mapped.sort(key=lambda x: order.get(x["title"], 999))
-            # fill missing
             have = {x["title"] for x in mapped}
             for h in headlines:
                 if h["title"] not in have:
@@ -306,13 +300,10 @@ def send_telegram_message(text: str) -> dict[str, Any]:
     url = f"{TELEGRAM_API_BASE}{bot_token}/sendMessage"
     response = requests.post(
         url,
-        json={
-            "chat_id": chat_id,
-            "text": text[:3900],
-            "disable_web_page_preview": True,
-        },
+        json={"chat_id": chat_id, "text": text[:3900], "disable_web_page_preview": True},
         timeout=30,
     )
+
     try:
         data = response.json()
     except Exception:
@@ -336,20 +327,15 @@ def main():
     output_dir.mkdir(exist_ok=True)
     image_path = output_dir / "morning_headline_news.png"
 
-    render_headline_news_image(
-        briefs,
-        output_path=image_path,
-        title="오늘의 헤드라인 뉴스",
-    )
+    render_headline_news_image(briefs, output_path=image_path, title="오늘의 헤드라인 뉴스")
 
     caption = "💛 아침 헤드라인 뉴스\n오늘 주요 이슈를 카드형 이미지로 정리했습니다."
-    photo_result = send_telegram_photo(image_path, caption=caption)
-    print("[telegram photo sent]", photo_result.get("ok"))
+    send_telegram_photo(image_path, caption=caption)
+    print("[telegram photo sent] ok")
 
     if send_text_too:
-        text_message = build_text_message(briefs)
-        msg_result = send_telegram_message(text_message)
-        print("[telegram text sent]", msg_result.get("ok"))
+        send_telegram_message(build_text_message(briefs))
+        print("[telegram text sent] ok")
 
     print("[output image]", image_path.resolve())
 

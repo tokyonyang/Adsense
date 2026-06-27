@@ -20,7 +20,7 @@ def main():
         max_keywords=boost.max_keywords,
         seed_keywords=boost.event_keywords,
         news_links_per_topic=boost.news_links_per_topic,
-        run_source="daily_pipeline_v1_10_2",
+        run_source="daily_pipeline_v1_15",
         boost_summary=boost.to_dict(),
     )
 

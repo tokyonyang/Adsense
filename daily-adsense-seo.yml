@@ -1,0 +1,80 @@
+name: Daily AdSense SEO Hot Issue Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # KST 06:07, 11:07, 15:07, 19:07
+    # 정각 실행은 GitHub Actions 부하로 지연/누락 가능성이 있어 7분으로 이동
+    # UTC 21:07(previous day), 02:07, 06:07, 10:07
+    - cron: "7 21 * * *"
+    - cron: "7 2 * * *"
+    - cron: "7 6 * * *"
+    - cron: "7 10 * * *"
+
+jobs:
+  daily-adsense-seo:
+    runs-on: ubuntu-latest
+
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      WP_BASE_URL: ${{ secrets.WP_BASE_URL }}
+      WP_USERNAME: ${{ secrets.WP_USERNAME }}
+      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      LOOKBACK_HOURS: 24
+      FALLBACK_LOOKBACK_HOURS: 48
+      MAX_KEYWORDS: 30
+      HOT_ISSUE_COUNT: 10
+      CARD_NEWS_COUNT: 3
+      ARTICLE_COUNT: 3
+      NEWS_LINKS_PER_TOPIC: 5
+      CATEGORY_FILTER: all
+      ITEM_LIST_ONLY: "true"
+      AUTO_FALLBACK: "true"
+      USE_NAVER_NEWS_CANDIDATES: "true"
+      USE_NAVER_DATALAB: "true"
+      NEWS_PROVIDER: naver_first
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show trigger schedule
+        run: |
+          echo "Triggered by schedule: ${{ github.event.schedule }}"
+          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
+          TZ=Asia/Seoul date '+KST now: %Y-%m-%d %H:%M:%S'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          if [ -f requirements.dashboard.txt ]; then
+            pip install -r requirements.dashboard.txt
+          fi
+          pip install requests feedparser beautifulsoup4 python-dotenv google-generativeai supabase || true
+
+      - name: Check Telegram secrets
+        run: |
+          python - <<'PY'
+          import os
+          print("TELEGRAM_BOT_TOKEN:", "OK" if os.getenv("TELEGRAM_BOT_TOKEN") else "MISSING")
+          print("TELEGRAM_CHAT_ID:", "OK" if os.getenv("TELEGRAM_CHAT_ID") else "MISSING")
+          PY
+
+      - name: Run original hot issue report
+        run: |
+          python main.py
