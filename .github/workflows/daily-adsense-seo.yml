@@ -37,6 +37,8 @@ jobs:
       HOT_ISSUE_NEWS_PER_KEYWORD: 5
       HOT_ISSUE_LOOKBACK_HOURS: 48
       HOT_ISSUE_REQUEST_SLEEP: "0.12"
+      HOT_ISSUE_USE_REFERENCE_HEADLINES: "true"
+      HOT_ISSUE_REFERENCE_PACKS: "economic_newspaper,stock_finance,international,politics_social,it_science_life"
 
       # Morning 카드뉴스 선별 기준도 Daily와 동일 엔진에서 계산
       HEADLINE_CARDNEWS_ISSUES: 5
