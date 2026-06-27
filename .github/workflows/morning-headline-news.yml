@@ -18,11 +18,10 @@ jobs:
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      # 카드뉴스 운영 설정
+      # v1.24: 헤드라인 List 기준 카드뉴스
       HEADLINE_LOOKBACK_HOURS: 48
+      HEADLINE_SIMILAR_LOOKBACK_HOURS: 72
       HEADLINE_CARDNEWS_ISSUES: 5
-      HEADLINE_MIN_CLUSTER_SIZE: 2
-      HEADLINE_CLUSTER_THRESHOLD: "0.24"
       HEADLINE_IMAGE_SCALE: 2
       HEADLINE_SEND_LINK_DIGEST: "true"
 
@@ -52,6 +51,6 @@ jobs:
           pip install requests feedparser python-dotenv google-generativeai playwright
           python -m playwright install --with-deps chromium
 
-      - name: Send morning headline cardnews report
+      - name: Send morning headline anchor cardnews report
         run: |
           python -m app.jobs.send_headline_cardnews_report
