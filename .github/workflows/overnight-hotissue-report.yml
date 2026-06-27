@@ -23,6 +23,9 @@ jobs:
       OVERNIGHT_NEWS_PER_QUERY: 8
       OVERNIGHT_TREND_LIMIT: 12
 
+      OVERNIGHT_ENABLE_SNS_TRENDS: "true"
+      OVERNIGHT_SNS_TREND_QUERIES: "YouTube:유튜브 인기 영상 한국|Instagram/Reels:인스타그램 릴스 트렌드 한국|TikTok:틱톡 트렌드 한국|X/Threads:X 트렌드 한국|X/Threads:스레드 Threads 인기 주제 한국"
+
       OVERNIGHT_ENABLE_WEATHER: "true"
       OVERNIGHT_WEATHER_TIMEOUT: 20
       OVERNIGHT_WEATHER_REGIONS: "서울,인천,대전,대구,부산,광주,제주"
