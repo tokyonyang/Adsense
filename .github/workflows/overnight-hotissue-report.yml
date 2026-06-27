@@ -17,13 +17,15 @@ jobs:
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: "gemini-2.0-flash"
 
       OVERNIGHT_LOOKBACK_HOURS: 16
       OVERNIGHT_NEWS_PER_QUERY: 8
       OVERNIGHT_TREND_LIMIT: 12
 
       OVERNIGHT_ENABLE_WEATHER: "true"
-      OVERNIGHT_WEATHER_REGIONS: "서울,인천,수원,춘천,강릉,대전,청주,대구,부산,울산,광주,전주,제주"
+      OVERNIGHT_WEATHER_TIMEOUT: 20
+      OVERNIGHT_WEATHER_REGIONS: "서울,인천,대전,대구,부산,광주,제주"
 
       OVERNIGHT_IMAGE_WIDTH: 1080
       OVERNIGHT_IMAGE_HEIGHT: 1080
