@@ -69,47 +69,34 @@ def strip_tags(text: str) -> str:
 
 def normalize_title(title: str) -> str:
     title = strip_tags(title)
-    title = title.replace("...", "…")
-    title = title.replace("⋯", "…")
+    title = title.replace("...", "…").replace("⋯", "…")
     title = re.sub(r"\[[^\]]{1,20}\]", "", title)
     title = re.sub(r"\([^)]{1,20}\)$", "", title)
     title = re.sub(r"\s+", " ", title).strip(" -·ㆍ|")
     return title.strip()
 
 
-def is_truncated_title(title: str) -> bool:
-    clean = normalize_title(title)
-    return (
-        clean.endswith("…")
-        or clean.endswith("...")
-        or "…" in clean
-        or "..." in clean
-        or "⋯" in clean
-    )
-
-
 def is_roundup_or_low_value_title(title: str) -> bool:
     clean = normalize_title(title)
     compact = re.sub(r"\s+", "", clean)
-
     if len(clean) < 8:
         return True
-
     for pattern in ROUNDUP_TITLE_PATTERNS:
         if re.search(pattern, clean, flags=re.IGNORECASE):
             return True
-
     for keyword in LOW_VALUE_KEYWORDS:
         if keyword in clean:
             return True
-
     if clean.count("·") >= 4 or clean.count("ㆍ") >= 4:
         return True
-
     if compact in ["오늘의주요뉴스", "오늘주요뉴스", "주요뉴스", "오늘뉴스"]:
         return True
-
     return False
+
+
+def is_truncated_title(title: str) -> bool:
+    clean = normalize_title(title)
+    return clean.endswith("…") or "…" in clean or "..." in clean or "⋯" in clean
 
 
 def title_key(title: str) -> str:
@@ -149,10 +136,8 @@ def fetch_naver_news(category: str, query: str, display: int = 20) -> list[dict[
     for item in data.get("items", []):
         title = normalize_title(item.get("title", ""))
         desc = normalize_title(item.get("description", ""))
-
         if not title or is_roundup_or_low_value_title(title):
             continue
-
         rows.append({
             "category": category,
             "title": title,
@@ -161,7 +146,7 @@ def fetch_naver_news(category: str, query: str, display: int = 20) -> list[dict[
             "published_at": parse_date(item.get("pubDate")),
             "source": "naver",
             "query": query,
-            "needs_rewrite": is_truncated_title(title) or is_roundup_or_low_value_title(title),
+            "needs_rewrite": is_truncated_title(title),
         })
     return rows
 
@@ -184,10 +169,8 @@ def fetch_google_news(category: str, query: str, limit: int = 15) -> list[dict[s
         title = normalize_title(getattr(entry, "title", ""))
         title = re.sub(r"\s+-\s+[^-]{1,30}$", "", title).strip()
         desc = normalize_title(getattr(entry, "summary", ""))
-
         if not title or is_roundup_or_low_value_title(title):
             continue
-
         rows.append({
             "category": category,
             "title": title,
@@ -219,42 +202,30 @@ def collect_headlines(max_items: int = 10, lookback_hours: int = 24) -> list[dic
     if len(fresh) < max_items:
         fresh = candidates
 
-    deduped = []
     seen = set()
-    category_count: dict[str, int] = {}
+    deduped = []
+    category_count = {}
 
-    # 완성된 제목을 우선, 잘린 제목은 뒤로
-    def sort_key(item: dict[str, Any]):
-        return (
-            1 if item.get("needs_rewrite") else 0,
-            -item.get("published_at", now).timestamp(),
-        )
+    def sort_key(item):
+        return (1 if item.get("needs_rewrite") else 0, -item.get("published_at", now).timestamp())
 
     for item in sorted(fresh, key=sort_key):
-        title = item["title"]
-        if is_roundup_or_low_value_title(title):
-            continue
-
-        tkey = title_key(title)
+        tkey = title_key(item["title"])
         if not tkey or tkey in seen:
             continue
-
-        category = item.get("category", "주요")
-        if category_count.get(category, 0) >= 2 and len(deduped) < max_items - 2:
+        cat = item.get("category", "주요")
+        if category_count.get(cat, 0) >= 2 and len(deduped) < max_items - 2:
             continue
-
         seen.add(tkey)
         deduped.append(item)
-        category_count[category] = category_count.get(category, 0) + 1
-
+        category_count[cat] = category_count.get(cat, 0) + 1
         if len(deduped) >= max_items:
             break
 
     if len(deduped) < max_items:
         for item in sorted(fresh, key=sort_key):
-            title = item["title"]
-            tkey = title_key(title)
-            if is_roundup_or_low_value_title(title) or not tkey or tkey in seen:
+            tkey = title_key(item["title"])
+            if not tkey or tkey in seen:
                 continue
             seen.add(tkey)
             deduped.append(item)
@@ -278,69 +249,78 @@ def _default_icon(category: str) -> str:
     }.get(category, "•")
 
 
-def safe_headline_from_title(title: str, description: str = "", max_len: int = 58) -> str:
-    """
-    Gemini가 없거나 실패했을 때 사용하는 fallback.
-    잘린 제목이면 description을 우선 활용해 완성형 문장에 가깝게 만듭니다.
-    """
+def _extract_keywords(text: str, limit: int = 3) -> list[str]:
+    words = []
+    for token in re.findall(r"[가-힣A-Za-z0-9]{2,}", text or ""):
+        if token not in words and len(token) <= 10:
+            words.append(token)
+        if len(words) >= limit:
+            break
+    return words
+
+
+def safe_headline_from_title(title: str, description: str = "", max_len: int = 52) -> str:
     title = normalize_title(title)
     description = normalize_title(description)
-
-    # 원 제목이 잘려 있으면 설명에서 첫 문장을 사용
-    if is_truncated_title(title) and description:
-        candidate = description
-    else:
-        candidate = title
-
-    candidate = re.sub(r"\s+", " ", candidate).strip()
+    candidate = description if (is_truncated_title(title) and description) else title
     candidate = candidate.replace("…", " ").replace("...", " ").replace("⋯", " ")
     candidate = re.sub(r"\s+", " ", candidate).strip(" -·ㆍ|")
-
     if len(candidate) <= max_len:
         return candidate
-
-    for sep in ["다.", "요.", "임.", "다", "·", " - ", " | ", ":"]:
-        pos = candidate.find(sep, 28)
-        if 32 <= pos <= max_len:
+    for sep in ["다.", "요.", "임.", "·", " - ", " | ", ":"]:
+        pos = candidate.find(sep, 24)
+        if 28 <= pos <= max_len:
             end = pos + len(sep)
             return candidate[:end].strip()
+    return candidate[:max_len - 1].rstrip() + "…"
 
-    return candidate[: max_len - 1].rstrip() + "…"
+
+def build_grounded_summaries(title: str, description: str, category: str, source: str = "", published_at=None) -> list[str]:
+    lines = []
+    headline_base = safe_headline_from_title(title, description, max_len=28)
+    if description:
+        desc = description.replace("…", " ").replace("...", " ")
+        desc = re.sub(r"\s+", " ", desc).strip()
+        if desc and desc != headline_base:
+            lines.append(desc[:24].rstrip() + ("…" if len(desc) > 24 else ""))
+    kw = _extract_keywords(title + " " + description, limit=3)
+    if kw:
+        lines.append("핵심: " + ", ".join(kw))
+    if published_at:
+        try:
+            lines.append(f"{category} · {published_at.strftime('%m/%d %H:%M')}")
+        except Exception:
+            pass
+    elif source:
+        lines.append(f"{category} · {source}")
+
+    out = []
+    for line in lines:
+        line = str(line).strip()
+        if line and line not in out:
+            out.append(line)
+    if not out:
+        out = [f"{category} 핵심 이슈", "관련 기사 확인"]
+    return out[:3]
 
 
 def build_fallback_brief(headlines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     briefs = []
     for item in headlines:
         title = item["title"]
+        desc = item.get("description", "")
         category = item.get("category", "주요")
-        desc = item.get("description") or ""
-        headline_text = safe_headline_from_title(title, desc, max_len=58)
-
-        short_title = headline_text if len(headline_text) <= 24 else headline_text[:24].rstrip() + "…"
-
-        summaries = []
-        if desc:
-            summary = safe_headline_from_title(desc, "", max_len=24)
-            summaries.append(summary)
-        else:
-            summaries.append(short_title)
-        summaries.append(f"{category} 분야 주요 이슈")
-        summaries.append("후속 기사 확인 필요")
-
-        keywords = []
-        for token in re.findall(r"[가-힣A-Za-z0-9]{2,}", headline_text):
-            if token not in keywords and len(token) <= 10:
-                keywords.append(token)
-            if len(keywords) >= 3:
-                break
+        headline_text = safe_headline_from_title(title, desc, max_len=52)
+        keywords = _extract_keywords(headline_text + " " + desc, limit=3)
+        summaries = build_grounded_summaries(title, desc, category, item.get("source",""), item.get("published_at"))
 
         briefs.append({
             **item,
             "headline_text": headline_text,
-            "short_title": short_title,
+            "short_title": headline_text if len(headline_text) <= 20 else headline_text[:20].rstrip() + "…",
             "highlight": "",
-            "summaries": summaries[:3],
-            "keywords": keywords[:3],
+            "summaries": summaries,
+            "keywords": keywords,
             "icon": _default_icon(category),
         })
     return briefs
@@ -356,6 +336,8 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
     except Exception:
         return build_fallback_brief(headlines)
 
+    fallback_map = {h["title"]: build_fallback_brief([h])[0] for h in headlines}
+
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
@@ -365,25 +347,24 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
                 "category": h.get("category", "주요"),
                 "title": h["title"],
                 "description": h.get("description", ""),
-                "needs_rewrite": bool(h.get("needs_rewrite")),
             }
             for i, h in enumerate(headlines)
         ]
         prompt = f"""
-다음 한국 뉴스 후보 10개를 아침 헤드라인 뉴스용으로 정리해줘.
+다음 한국 뉴스 후보 10개를 아침 헤드라인 카드와 텔레그램 텍스트용으로 정리해줘.
 반드시 JSON 배열만 반환해.
 각 원소는 index, headline_text, short_title, highlight, summaries, keywords, icon 키를 포함해야 해.
 
 중요 규칙:
-- headline_text: 텔레그램 텍스트 메시지에 들어갈 완성형 헤드라인. 45자 이내.
-- headline_text에는 절대 "...", "…", "⋯", "外", "오늘의 주요뉴스", "1부 주요뉴스"를 넣지 마.
-- 원문 제목이 잘려 있으면 description을 참고해 자연스러운 완성형 제목으로 다시 작성해.
-- 사실을 새로 만들지 말고, title/description에 근거한 범위에서만 요약해.
-- short_title: 이미지 카드용 18자 이내.
-- highlight: 이미지 강조문구 16자 이내, 없으면 빈 문자열.
-- summaries: 3개 배열, 각 18자 이내.
-- keywords: 2~3개 배열.
-- icon: 2자 이내 이모지 또는 짧은 텍스트.
+- headline_text: 46자 이내 완성형 헤드라인.
+- headline_text는 반드시 기사 title/description과 내용이 일치해야 한다.
+- headline_text에 "...", "…", "⋯", "오늘의 주요뉴스", "1부 주요뉴스", "外" 금지.
+- short_title: 카드 제목용 18자 이내.
+- summaries: 카드 bullet 2~3개. 각 문장은 기사 내용에 직접 근거해야 하며, 일반론 금지.
+- summaries에 "세부 내용 확인 필요", "분야 주요 이슈", "후속 기사 확인 필요" 같은 상투문구 금지.
+- keywords: 2~3개.
+- icon: 2자 이내.
+- 사실 왜곡 금지.
 - 한국어만 사용.
 - 마크다운 금지.
 
@@ -396,31 +377,46 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
         if not m:
             return build_fallback_brief(headlines)
 
-        arr = json.loads(m.group(0))
-        by_index = {i+1: h for i, h in enumerate(headlines)}
+        rows = json.loads(m.group(0))
+        by_index = {i + 1: h for i, h in enumerate(headlines)}
         mapped = []
-        fallback = {h["title"]: build_fallback_brief([h])[0] for h in headlines}
 
-        for row in arr:
+        banned_summary_phrases = ["세부 내용 확인 필요", "분야 주요 이슈", "후속 기사 확인 필요", "상세 내용은 본문 기사 확인 필요"]
+
+        for row in rows:
             src = by_index.get(int(row.get("index", 0)))
             if not src:
                 continue
+            fb = fallback_map[src["title"]]
 
-            fb = fallback[src["title"]]
             headline_text = str(row.get("headline_text") or fb["headline_text"]).strip()
-
-            # Gemini가 잘린 문자를 다시 넣으면 fallback으로 교체
             if is_truncated_title(headline_text) or is_roundup_or_low_value_title(headline_text):
                 headline_text = fb["headline_text"]
+
+            raw_summaries = row.get("summaries") or []
+            summaries = []
+            for s in raw_summaries:
+                s = str(s).strip()
+                if not s:
+                    continue
+                if any(b in s for b in banned_summary_phrases):
+                    continue
+                if s not in summaries:
+                    summaries.append(s)
+            if not summaries:
+                summaries = fb["summaries"]
+
+            keywords = row.get("keywords") or fb["keywords"]
+            keywords = [str(k)[:12] for k in keywords][:3]
 
             mapped.append({
                 **src,
                 "headline_text": headline_text[:58],
                 "short_title": str(row.get("short_title") or headline_text)[:28],
                 "highlight": str(row.get("highlight") or "")[:20],
-                "summaries": [str(x)[:24] for x in (row.get("summaries") or fb.get("summaries") or [])][:3],
-                "keywords": [str(x)[:12] for x in (row.get("keywords") or fb.get("keywords") or [])][:3],
-                "icon": str(row.get("icon") or fb.get("icon") or _default_icon(src.get("category", "주요")))[:3],
+                "summaries": summaries[:3],
+                "keywords": keywords,
+                "icon": str(row.get("icon") or fb["icon"])[:3],
             })
 
         if mapped:
@@ -429,7 +425,7 @@ def summarize_with_gemini(headlines: list[dict[str, Any]]) -> list[dict[str, Any
             have = {x["title"] for x in mapped}
             for h in headlines:
                 if h["title"] not in have:
-                    mapped.append(fallback[h["title"]])
+                    mapped.append(fallback_map[h["title"]])
             return mapped[:len(headlines)]
 
     except Exception as exc:
@@ -446,19 +442,15 @@ def build_text_message(briefs: list[dict[str, Any]]) -> str:
     now = datetime.now(KST)
     header = f"{now:%Y년 %m월%d일}({weekday_ko(now)})☀️☀️🌤\n💛 아침 헤드라인 뉴스"
     lines = [header, ""]
-
     for idx, item in enumerate(briefs, start=1):
-        headline = item.get("headline_text") or safe_headline_from_title(item.get("title", ""), item.get("description", ""))
-        headline = headline.replace("…", "").replace("...", "").strip()
+        headline = (item.get("headline_text") or safe_headline_from_title(item.get("title", ""), item.get("description", ""))).replace("…", "").strip()
         lines.append(f"{idx}. {headline}")
-
     return "\n".join(lines)
 
 
 def send_telegram_message(text: str) -> dict[str, Any]:
     bot_token = env("TELEGRAM_BOT_TOKEN")
     chat_id = env("TELEGRAM_CHAT_ID")
-
     if not bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN이 설정되지 않았습니다.")
     if not chat_id:
@@ -470,15 +462,12 @@ def send_telegram_message(text: str) -> dict[str, Any]:
         json={"chat_id": chat_id, "text": text[:3900], "disable_web_page_preview": True},
         timeout=30,
     )
-
     try:
         data = response.json()
     except Exception:
         data = {"ok": False, "description": response.text}
-
     if not response.ok or not data.get("ok"):
         raise RuntimeError(f"Telegram 텍스트 전송 실패: {data}")
-
     return data
 
 
@@ -506,6 +495,16 @@ def main():
         print(text_message)
         send_telegram_message(text_message)
         print("[telegram text sent] ok")
+
+    print("[briefs preview]")
+    print(json.dumps([
+        {
+            "category": b.get("category"),
+            "headline_text": b.get("headline_text"),
+            "summaries": b.get("summaries"),
+            "keywords": b.get("keywords"),
+        } for b in briefs
+    ], ensure_ascii=False, indent=2))
 
     print("[output image]", image_path.resolve())
 

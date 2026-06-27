@@ -1,31 +1,28 @@
-# v1.17 아침 헤드라인 뉴스 품질 개선 패치
+# v1.19 헤드라인 뉴스 이미지 정합성 개선 패치
 
-## 수정 대상
+## 교체할 파일
 
 ```text
 app/jobs/send_headline_news_report.py
-docs/morning_headline_quality_fix_v1_17.md
+app/services/headline_news_image_service.py
+docs/morning_headline_image_alignment_v1_19.md
 ```
 
 ## 해결하는 문제
 
-아침 헤드라인 뉴스가 아래처럼 작성되다 만 것처럼 보이는 문제를 수정합니다.
+- 헤드라인 이미지 카드 내용이 실제 기사와 잘 맞지 않는 문제
+- placeholder 문구가 반복되는 문제
+- 텍스트 메시지와 이미지 카드가 다른 데이터를 쓰는 문제
 
-```text
-오늘의 주요뉴스…
-1부 오늘의 주요뉴스
-베네수엘라 강진⋯김건희 ... 外
-```
+## 핵심 변경
 
-## 변경 내용
+1. 이미지 카드 제목 = `headline_text` 우선
+2. 카드 bullet = 기사 내용 기반 `summaries`
+3. 상투 문구 자동 제거
+4. fallback도 기사 description 기반 생성
+5. 실행 로그에 `briefs preview` 출력
 
-1. 종합/브리핑성 기사 제목 제외
-2. 연예/운세/포토뉴스 등 낮은 가치 제목 제외
-3. 검색어를 구체적인 이슈형 쿼리로 변경
-4. 텍스트 메시지 제목은 최대한 원문 유지
-5. 이미지용 요약과 텍스트용 제목을 분리
-
-## 적용 후 테스트
+## 테스트 방법
 
 ```text
 Actions
@@ -33,4 +30,9 @@ Actions
 → Run workflow
 ```
 
-정상이라면 텍스트 메시지에서 `오늘의 주요뉴스`, `1부 오늘의 주요뉴스`, `外` 같은 제목이 크게 줄어야 합니다.
+실행 후:
+1. 텔레그램 텍스트 메시지 확인
+2. 텔레그램 이미지 카드 확인
+3. GitHub Actions 로그에서 `briefs preview` 확인
+
+세 결과가 서로 비슷한 내용이면 정상입니다.

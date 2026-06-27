@@ -24,25 +24,29 @@ def _font(size: int, bold: bool = False):
 
 
 def _wrap_text(draw, text: str, font, max_width: int, max_lines: int):
-    text = str(text or "")
+    text = str(text or "").strip()
     if not text:
         return []
     words = text.split()
     if not words:
         words = [text]
+
     lines = []
     current = words[0]
+
     for word in words[1:]:
-        cand = current + " " + word
-        if draw.textbbox((0, 0), cand, font=font)[2] <= max_width:
-            current = cand
+        candidate = current + " " + word
+        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+            current = candidate
         else:
             lines.append(current)
             current = word
             if len(lines) >= max_lines:
                 break
+
     if len(lines) < max_lines and current:
         lines.append(current)
+
     fixed = []
     for line in lines[:max_lines]:
         if draw.textbbox((0, 0), line, font=font)[2] <= max_width:
@@ -84,6 +88,56 @@ def _category_color(category: str) -> str:
         "IT": "#7A5AF8",
         "스포츠": "#22C55E",
     }.get(category, "#F6C344")
+
+
+def _clean_card_summary(text: str) -> str:
+    text = str(text or "").strip()
+    ban = [
+        "세부 내용 확인 필요",
+        "후속 기사 확인 필요",
+        "분야 주요 이슈",
+        "주요 이슈",
+        "상세 내용은 본문 기사 확인 필요",
+    ]
+    for b in ban:
+        text = text.replace(b, "")
+    text = text.strip(" -·ㆍ|")
+    return text
+
+
+def _fallback_card_summaries(item: dict[str, Any]) -> list[str]:
+    category = item.get("category", "주요")
+    source = item.get("source", "")
+    published_at = item.get("published_at")
+
+    lines = []
+    if item.get("description"):
+        lines.append(str(item["description"])[:26].rstrip("…") + ("…" if len(str(item["description"])) > 26 else ""))
+
+    keywords = item.get("keywords") or []
+    if keywords:
+        lines.append("핵심: " + ", ".join(str(k) for k in keywords[:3]))
+
+    if published_at:
+        try:
+            time_text = published_at.strftime("%m/%d %H:%M")
+            lines.append(f"{category} · {time_text}")
+        except Exception:
+            pass
+
+    if source:
+        lines.append(f"출처: {source}")
+
+    result = []
+    for line in lines:
+        line = _clean_card_summary(line)
+        if line and line not in result:
+            result.append(line)
+
+    if not result:
+        result = [f"{category} 핵심 이슈", "관련 기사 확인"]
+
+    return result[:3]
 
 
 def render_headline_news_image(headlines: list[dict[str, Any]], *, output_path: str | Path, title: str = "오늘의 헤드라인 뉴스") -> str:
@@ -146,13 +200,14 @@ def render_headline_news_image(headlines: list[dict[str, Any]], *, output_path: 
         _draw_round_rect(draw, cat_box, 16, cat_color, "#151515", 2)
         draw.text((cat_box[0] + 18, cat_box[1] + 7), category, font=_font(20, bold=True), fill=cat_color)
 
-        title_lines = _wrap_text(draw, item.get("short_title") or item.get("title") or "", tile_title_font, tile_w - 44, 2)
+        headline = item.get("headline_text") or item.get("short_title") or item.get("title") or ""
+        title_lines = _wrap_text(draw, headline, tile_title_font, tile_w - 44, 2)
         ty = y + 88
         for line in title_lines:
             draw.text((x + 22, ty), line, font=tile_title_font, fill=white)
             ty += 36
 
-        highlight = item.get("highlight") or ""
+        highlight = str(item.get("highlight") or "").strip()
         if highlight:
             hi_lines = _wrap_text(draw, highlight, _font(24, bold=True), tile_w - 44, 2)
             for line in hi_lines:
@@ -164,9 +219,19 @@ def render_headline_news_image(headlines: list[dict[str, Any]], *, output_path: 
         icon = item.get("icon", "•")
         draw.text((cx - 22, cy - 26), icon, font=_font(36, bold=True), fill=cat_color)
 
+        raw_summaries = item.get("summaries") or []
+        summaries = []
+        for s in raw_summaries:
+            cleaned = _clean_card_summary(s)
+            if cleaned and cleaned not in summaries:
+                summaries.append(cleaned)
+
+        if not summaries:
+            summaries = _fallback_card_summaries(item)
+
         bullet_y = y + 150 + (40 if highlight else 0)
         max_y = y + tile_h - 30
-        for summary in (item.get("summaries") or [])[:3]:
+        for summary in summaries[:3]:
             lines = _wrap_text(draw, summary, tile_summary_font, tile_w - 160, 2)
             if not lines or bullet_y + len(lines) * 28 > max_y:
                 break
@@ -186,9 +251,9 @@ def render_headline_news_image(headlines: list[dict[str, Any]], *, output_path: 
     kw = []
     for item in items:
         for k in item.get("keywords", []):
-            if k not in kw:
+            if k and k not in kw:
                 kw.append(k)
-    kw_text = " / ".join(kw[:10]) if kw else "주요 이슈 / 경제 / 증시 / 산업 / 정책"
+    kw_text = " / ".join(kw[:10]) if kw else "경제 / 증시 / 정책 / 산업 / 국제 / IT"
     for i, line in enumerate(_wrap_text(draw, kw_text, keyword_font, W - 330, 3)):
         draw.text((pad + 260, H - footer_h + 22 + i * 28), line, font=keyword_font, fill=white)
 
