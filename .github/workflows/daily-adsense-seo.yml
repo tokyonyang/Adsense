@@ -3,7 +3,7 @@ name: Daily AdSense SEO Hot Issue Report
 on:
   workflow_dispatch:
   schedule:
-    # KST 06:07, 11:07, 15:07, 19:07
+    # KST 06:07 / 11:07 / 15:07 / 19:07
     - cron: "7 21 * * *"
     - cron: "7 2 * * *"
     - cron: "7 6 * * *"
@@ -16,30 +16,36 @@ jobs:
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-      WP_BASE_URL: ${{ secrets.WP_BASE_URL }}
-      WP_USERNAME: ${{ secrets.WP_USERNAME }}
-      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      LOOKBACK_HOURS: 24
-      FALLBACK_LOOKBACK_HOURS: 48
-      MAX_KEYWORDS: 30
-      HOT_ISSUE_COUNT: 10
-      HOT_ISSUE_CATEGORY_BALANCED: "true"
-      HOT_ISSUE_PER_CATEGORY_MAX: 2
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      # v1.26 카테고리 우선순위 옵션
+      # finance_first: 경제/금융·증시·산업·정책 우선
+      # balanced: 카테고리별 균형
+      # all_score: 전체 점수순
+      HOT_ISSUE_CATEGORY_MODE: "finance_first"
+
+      # 경제/금융 중심 우선 카테고리
+      HOT_ISSUE_PRIORITY_CATEGORIES: "경제·금융,증권·투자,산업·기업,정책·지원금,부동산·주거금융,생활·제도,국제"
+
+      # TOP 10 중 우선 카테고리 최소/최대 개수
+      HOT_ISSUE_PRIORITY_MIN: 6
+      HOT_ISSUE_PRIORITY_MAX: 8
+
+      # 보조 카테고리
+      HOT_ISSUE_SECONDARY_CATEGORIES: "시사·정치,사회·사건,날씨·안전,건강·의료,교육·입시"
+      HOT_ISSUE_SECONDARY_MAX: 3
+
+      # 연예/스포츠/기타는 후순위 제한
+      HOT_ISSUE_LOW_PRIORITY_CATEGORIES: "연예·문화,스포츠,기타"
+      HOT_ISSUE_LOW_PRIORITY_MAX: 2
       HOT_ISSUE_OTHER_MAX: 1
-      CARD_NEWS_COUNT: 3
-      ARTICLE_COUNT: 3
-      NEWS_LINKS_PER_TOPIC: 5
-      CATEGORY_FILTER: all
-      ITEM_LIST_ONLY: "true"
-      AUTO_FALLBACK: "true"
-      USE_NAVER_NEWS_CANDIDATES: "true"
-      USE_NAVER_DATALAB: "true"
-      NEWS_PROVIDER: naver_first
+
+      # 단일 카테고리 쏠림 제한
+      HOT_ISSUE_PER_CATEGORY_MAX: 2
+      HOT_ISSUE_PRIORITY_PER_CATEGORY_MAX: 3
+      HOT_ISSUE_TOP_N: 10
 
     steps:
       - name: Checkout
@@ -59,22 +65,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          if [ -f requirements.dashboard.txt ]; then
-            pip install -r requirements.dashboard.txt
-          fi
-          pip install requests feedparser beautifulsoup4 python-dotenv google-generativeai supabase || true
+          pip install requests feedparser python-dotenv google-generativeai beautifulsoup4 lxml
 
-      - name: Check Telegram secrets
-        run: |
-          python - <<'PY'
-          import os
-          print("TELEGRAM_BOT_TOKEN:", "OK" if os.getenv("TELEGRAM_BOT_TOKEN") else "MISSING")
-          print("TELEGRAM_CHAT_ID:", "OK" if os.getenv("TELEGRAM_CHAT_ID") else "MISSING")
-          PY
-
-      - name: Run category-balanced hot issue report
+      - name: Run daily AdSense SEO report
         run: |
           python main.py

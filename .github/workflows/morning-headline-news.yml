@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # KST 06:10
+    # UTC 21:10(previous day)
     - cron: "10 21 * * *"
 
 jobs:
@@ -17,25 +18,21 @@ jobs:
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      # Daily Hot Issue와 동일한 기준
-      LOOKBACK_HOURS: 24
-      FALLBACK_LOOKBACK_HOURS: 48
-      MAX_KEYWORDS: 30
-      HOT_ISSUE_COUNT: 10
-      HOT_ISSUE_CATEGORY_BALANCED: "true"
-      HOT_ISSUE_PER_CATEGORY_MAX: 2
+      # Morning도 Daily와 동일한 카테고리 정책 사용
+      HOT_ISSUE_CATEGORY_MODE: "finance_first"
+      HOT_ISSUE_PRIORITY_CATEGORIES: "경제·금융,증권·투자,산업·기업,정책·지원금,부동산·주거금융,생활·제도,국제"
+      HOT_ISSUE_PRIORITY_MIN: 6
+      HOT_ISSUE_PRIORITY_MAX: 8
+      HOT_ISSUE_SECONDARY_CATEGORIES: "시사·정치,사회·사건,날씨·안전,건강·의료,교육·입시"
+      HOT_ISSUE_SECONDARY_MAX: 3
+      HOT_ISSUE_LOW_PRIORITY_CATEGORIES: "연예·문화,스포츠,기타"
+      HOT_ISSUE_LOW_PRIORITY_MAX: 2
       HOT_ISSUE_OTHER_MAX: 1
-      CARD_NEWS_COUNT: 3
-      ARTICLE_COUNT: 3
-      NEWS_LINKS_PER_TOPIC: 5
-      CATEGORY_FILTER: all
-      ITEM_LIST_ONLY: "true"
-      AUTO_FALLBACK: "true"
-      USE_NAVER_NEWS_CANDIDATES: "true"
-      USE_NAVER_DATALAB: "true"
-      NEWS_PROVIDER: naver_first
+      HOT_ISSUE_PER_CATEGORY_MAX: 2
+      HOT_ISSUE_PRIORITY_PER_CATEGORY_MAX: 3
+      HOT_ISSUE_TOP_N: 10
 
-      # 카드뉴스 전송 설정
+      HEADLINE_LOOKBACK_HOURS: 48
       HEADLINE_CARDNEWS_ISSUES: 5
       HEADLINE_IMAGE_SCALE: 2
       HEADLINE_SEND_LINK_DIGEST: "true"
@@ -63,12 +60,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          pip install requests feedparser beautifulsoup4 python-dotenv google-generativeai playwright
+          pip install requests feedparser python-dotenv google-generativeai playwright beautifulsoup4 lxml
           python -m playwright install --with-deps chromium
 
-      - name: Send Daily Hot Issue based cardnews report
+      - name: Send morning headline cardnews report
         run: |
           python -m app.jobs.send_headline_cardnews_report
