@@ -3,26 +3,22 @@ name: AdSense Dashboard Pipeline Report
 on:
   workflow_dispatch:
   schedule:
-    # KST 09:17, 17:17
-    # UTC 00:17, 08:17
+    # KST 09:17 / 17:17
     - cron: "17 0 * * *"
     - cron: "17 8 * * *"
 
 jobs:
-  run-dashboard-pipeline:
+  adsense-dashboard-pipeline:
     runs-on: ubuntu-latest
 
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      WP_BASE_URL: ${{ secrets.WP_BASE_URL }}
-      WP_USERNAME: ${{ secrets.WP_USERNAME }}
-      WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
       - name: Checkout
@@ -42,14 +38,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.dashboard.txt ]; then
-            pip install -r requirements.dashboard.txt
-          elif [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          pip install requests supabase python-dotenv google-generativeai || true
+          pip install requests feedparser python-dotenv google-generativeai beautifulsoup4 lxml
 
-      - name: Validate Telegram secrets
+      - name: Validate Telegram connection silently
         run: |
           python -m app.jobs.send_telegram_test
 

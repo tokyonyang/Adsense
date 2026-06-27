@@ -20,11 +20,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install minimal dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests python-dotenv
 
-      - name: Send Telegram test message
+      - name: Validate Telegram connection
         run: |
           python -m app.jobs.send_telegram_test
