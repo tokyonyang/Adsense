@@ -41,26 +41,37 @@ def domain(url: str | None) -> str:
         return "news"
 
 
-def fallback_issue_summary(cluster: dict[str, Any], index: int) -> dict[str, Any]:
-    articles = cluster.get("articles") or []
-    rep = articles[0] if articles else {}
-    title = clean_sentence(cluster.get("representative_title") or rep.get("title", ""), 54)
-    category = cluster.get("category") or rep.get("category") or "주요"
-    keywords = cluster.get("keywords") or []
+def extract_keywords(text: str, limit: int = 4) -> list[str]:
+    words = []
+    for token in re.findall(r"[가-힣A-Za-z0-9]{2,}", text or ""):
+        if token in ["오늘", "뉴스", "속보", "종합", "관련", "주요"]:
+            continue
+        if token not in words and len(token) <= 12:
+            words.append(token)
+        if len(words) >= limit:
+            break
+    return words
+
+
+def fallback_issue_from_anchor_group(group: dict[str, Any]) -> dict[str, Any]:
+    articles = group.get("articles") or []
+    anchor = group.get("anchor") or {}
+    title = clean_sentence(group.get("anchor_title") or anchor.get("title", ""), 54)
+    category = group.get("category") or anchor.get("category") or "주요"
 
     lines = []
     for article in articles[:3]:
-        desc = clean_sentence(article.get("description") or article.get("title"), 70)
+        desc = clean_sentence(article.get("description") or article.get("title"), 48)
         if desc and desc not in lines:
             lines.append(desc)
 
     while len(lines) < 3:
         if len(lines) == 0:
-            lines.append("같은 이슈를 다룬 복수 기사에서 공통 흐름이 확인됩니다.")
+            lines.append("관련 기사들이 같은 이슈를 반복 보도하고 있습니다.")
         elif len(lines) == 1:
-            lines.append("핵심 쟁점은 정책·시장·사회적 영향으로 이어질 가능성입니다.")
+            lines.append("핵심 쟁점은 기사 제목과 설명에서 공통적으로 확인됩니다.")
         else:
-            lines.append("후속 보도에서 세부 영향과 책임 소재를 확인할 필요가 있습니다.")
+            lines.append("후속 흐름은 원문 기사에서 추가 확인이 필요합니다.")
 
     links = []
     for article in articles[:3]:
@@ -68,34 +79,36 @@ def fallback_issue_summary(cluster: dict[str, Any], index: int) -> dict[str, Any
         if not url:
             continue
         links.append({
-            "title": clean_sentence(article.get("title", ""), 42),
+            "title": clean_sentence(article.get("title", ""), 44),
             "url": url,
             "domain": domain(url),
         })
 
+    keywords = group.get("keywords") or extract_keywords(title + " " + " ".join(lines), 4)
+
     return {
-        "rank": index,
+        "rank": group.get("rank"),
         "category": category,
         "headline": title,
         "summary_lines": lines[:3],
-        "insight": "중복 보도를 하나의 이슈로 묶어 핵심 흐름만 정리했습니다.",
+        "insight": "헤드라인 목록을 기준으로 관련 기사 3건을 묶었습니다.",
         "keywords": [str(k) for k in keywords[:4]],
         "links": links[:3],
         "article_count": len(articles),
+        "anchor_title": title,
     }
 
 
-def summarize_clusters_with_gemini(clusters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def summarize_anchor_groups_with_gemini(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    각 클러스터를 카드뉴스용 이슈로 변환합니다.
-    Gemini가 실패하면 기사 description 기반 fallback을 사용합니다.
+    v1.24:
+    독립 클러스터가 아니라 '헤드라인 뉴스 List(anchor)' 기반으로 요약합니다.
     """
-    if not clusters:
+    if not groups:
         return []
 
+    fallback = [fallback_issue_from_anchor_group(g) for g in groups]
     api_key = env("GEMINI_API_KEY")
-    fallback = [fallback_issue_summary(c, i + 1) for i, c in enumerate(clusters)]
-
     if not api_key:
         return fallback
 
@@ -109,12 +122,11 @@ def summarize_clusters_with_gemini(clusters: list[dict[str, Any]]) -> list[dict[
         model = genai.GenerativeModel("gemini-1.5-flash")
 
         payload = []
-        for idx, cluster in enumerate(clusters, start=1):
+        for group in groups:
             payload.append({
-                "rank": idx,
-                "category": cluster.get("category"),
-                "representative_title": cluster.get("representative_title"),
-                "keywords": cluster.get("keywords", [])[:5],
+                "rank": group.get("rank"),
+                "category": group.get("category"),
+                "anchor_title": group.get("anchor_title"),
                 "articles": [
                     {
                         "title": a.get("title"),
@@ -122,29 +134,31 @@ def summarize_clusters_with_gemini(clusters: list[dict[str, Any]]) -> list[dict[
                         "domain": domain(a.get("url")),
                         "published_at": a.get("published_at").isoformat() if isinstance(a.get("published_at"), datetime) else str(a.get("published_at") or ""),
                     }
-                    for a in (cluster.get("articles") or [])[:3]
+                    for a in (group.get("articles") or [])[:3]
                 ],
             })
 
         prompt = f"""
-아래는 오늘 아침 헤드라인 뉴스용으로 묶은 유사 기사 클러스터입니다.
-각 클러스터는 같은 이슈를 다룬 기사 최대 3개입니다.
+아래 입력은 이미 선정된 '아침 헤드라인 뉴스 List'입니다.
+각 항목의 anchor_title은 반드시 카드뉴스의 기준 제목입니다.
+절대 새로운 이슈를 추가하거나, anchor_title과 다른 주제로 바꾸지 마세요.
 
 반드시 JSON 배열만 반환하세요.
-각 원소는 다음 키를 포함하세요:
-rank, category, headline, summary_lines, insight, keywords
+각 원소는 rank, category, headline, summary_lines, insight, keywords 키를 포함하세요.
 
 작성 규칙:
-- headline: 34자 이내. 자연스러운 한국어 완성형 제목.
-- summary_lines: 정확히 3개. 각 36자 이내.
-  1줄: 무슨 일이 있었는지
-  2줄: 왜 중요한지 / 유사 기사 공통점
+- rank는 입력 rank와 동일.
+- headline은 anchor_title의 의미를 유지하되 36자 이내로 자연스럽게 정리.
+- summary_lines는 정확히 3개.
+  1줄: anchor_title 기준으로 무슨 일이 있었는지
+  2줄: 유사 기사 3건에서 공통으로 다루는 쟁점
   3줄: 영향 또는 앞으로 볼 포인트
-- insight: 34자 이내의 한줄 해석.
-- keywords: 3~4개.
-- 입력 기사에 없는 사실을 만들지 마세요.
-- "세부 내용 확인 필요", "분야 주요 이슈", "후속 기사 확인 필요" 같은 상투 문구 금지.
+- summary_lines는 입력 articles의 title/description에 근거해야 함.
+- 입력에 없는 사실을 만들지 마세요.
+- "세부 내용 확인 필요", "분야 주요 이슈", "후속 기사 확인 필요" 금지.
 - "...", "…", "外", "오늘의 주요뉴스" 금지.
+- insight는 34자 이내.
+- keywords는 3~4개.
 - 한국어만 사용.
 - 마크다운 금지.
 
@@ -158,12 +172,14 @@ rank, category, headline, summary_lines, insight, keywords
             return fallback
 
         rows = json.loads(match.group(0))
+        fb_by_rank = {int(x["rank"]): x for x in fallback}
         result = []
-        fallback_by_rank = {x["rank"]: x for x in fallback}
 
         for row in rows:
-            rank = int(row.get("rank") or len(result) + 1)
-            fb = fallback_by_rank.get(rank, fallback[min(len(result), len(fallback) - 1)])
+            rank = int(row.get("rank") or 0)
+            fb = fb_by_rank.get(rank)
+            if not fb:
+                continue
 
             headline = clean_sentence(row.get("headline") or fb["headline"], 42)
             if any(bad in headline for bad in ["...", "…", "外", "오늘의 주요뉴스"]):
@@ -171,14 +187,18 @@ rank, category, headline, summary_lines, insight, keywords
 
             lines = []
             for line in row.get("summary_lines") or []:
-                line = clean_sentence(line, 42)
-                if line and line not in lines and not any(bad in line for bad in ["세부 내용 확인", "분야 주요", "후속 기사"]):
+                line = clean_sentence(line, 48)
+                if not line:
+                    continue
+                if any(bad in line for bad in ["세부 내용 확인", "분야 주요", "후속 기사"]):
+                    continue
+                if line not in lines:
                     lines.append(line)
 
             if len(lines) < 3:
                 lines = fb["summary_lines"]
 
-            issue = {
+            result.append({
                 **fb,
                 "rank": rank,
                 "category": str(row.get("category") or fb["category"]),
@@ -186,18 +206,17 @@ rank, category, headline, summary_lines, insight, keywords
                 "summary_lines": lines[:3],
                 "insight": clean_sentence(row.get("insight") or fb["insight"], 42),
                 "keywords": [str(k)[:12] for k in (row.get("keywords") or fb["keywords"])][:4],
-            }
-            result.append(issue)
+            })
 
-        # 순서 안정화 및 누락 보충
-        result.sort(key=lambda x: x["rank"])
-        used = {x["rank"] for x in result}
+        # 누락 보충
+        used = {int(x["rank"]) for x in result}
         for fb in fallback:
-            if fb["rank"] not in used:
+            if int(fb["rank"]) not in used:
                 result.append(fb)
-        result.sort(key=lambda x: x["rank"])
-        return result[:len(clusters)]
+
+        result.sort(key=lambda x: int(x["rank"]))
+        return result[:len(groups)]
 
     except Exception as exc:
-        print("[cardnews gemini summary failed]", exc)
+        print("[anchor summary gemini failed]", exc)
         return fallback
