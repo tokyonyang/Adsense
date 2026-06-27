@@ -37,6 +37,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.dashboard.txt
 
+      - name: Validate Telegram secrets
+        run: |
+          python -m app.jobs.send_telegram_test
+
       - name: Preview event boost config
         run: |
           python -m app.jobs.run_event_boost_preview
