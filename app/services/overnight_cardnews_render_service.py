@@ -248,12 +248,42 @@ def market_page(payload: dict[str, Any], width: int, height: int) -> str:
     return shell(body, width, height)
 
 
+
+def keyword_label(item: Any) -> str:
+    if isinstance(item, dict):
+        return str(item.get("keyword") or "-")
+    return str(item or "-")
+
+
+def keyword_source_domains(item: Any) -> str:
+    if not isinstance(item, dict):
+        return "관련 기사 확인"
+    articles = item.get("articles") or []
+    domains = []
+    for article in articles[:2]:
+        domain = article.get("domain")
+        if domain and domain not in domains:
+            domains.append(domain)
+    if domains:
+        return " · ".join(domains)
+    if item.get("source"):
+        return str(item.get("source"))
+    return "관련 기사 확인"
+
+
 def keyword_page(payload: dict[str, Any], width: int, height: int) -> str:
     kw = payload.get("keywords") or {}
-    realtime = kw.get("realtime_keywords") or []
-    popular = kw.get("popular_keywords") or []
-    realtime_rows = "".join(f"<li>{esc(short(x, 22))}</li>" for x in realtime[:10])
-    popular_rows = "".join(f"<li>{esc(short(x, 22))}</li>" for x in popular[:10])
+    realtime = kw.get("realtime_keywords_detailed") or kw.get("realtime_keywords") or []
+    popular = kw.get("popular_keywords_detailed") or kw.get("popular_keywords") or []
+
+    realtime_rows = "".join(
+        f"<li><span>{esc(short(keyword_label(x), 22))}</span><small>{esc(short(keyword_source_domains(x), 34))}</small></li>"
+        for x in realtime[:8]
+    )
+    popular_rows = "".join(
+        f"<li><span>{esc(short(keyword_label(x), 22))}</span><small>{esc(short(keyword_source_domains(x), 34))}</small></li>"
+        for x in popular[:8]
+    )
     body = f"""
 <main class="page">
   {topbar()}
@@ -262,6 +292,41 @@ def keyword_page(payload: dict[str, Any], width: int, height: int) -> str:
     <div class="panel keybox"><h2>실시간 급상승</h2><ol>{realtime_rows}</ol></div>
     <div class="panel keybox"><h2>간밤 인기 키워드</h2><ol>{popular_rows}</ol></div>
   </section>
+  {footer()}
+</main>
+"""
+    return shell(body, width, height)
+
+
+def sns_page(payload: dict[str, Any], width: int, height: int) -> str:
+    kw = payload.get("keywords") or {}
+    sns_items = kw.get("sns_trends") or []
+    cards = []
+    for item in sns_items[:6]:
+        articles = item.get("articles") or []
+        domains = " · ".join(
+            a.get("domain") for a in articles[:2] if a.get("domain")
+        ) or "뉴스/검색 기반 보조 수집"
+        cards.append(f"""
+<div class="issue">
+  <div class="issue-head">[{esc(short(item.get("platform"), 18))}] {esc(short(item.get("headline"), 44))}</div>
+  <div class="issue-lines"><div>• {esc(short(item.get("summary"), 76))}</div></div>
+  <div class="insight">근거: {esc(short(domains, 70))}</div>
+</div>
+""")
+    if not cards:
+        cards.append("""
+<div class="issue">
+  <div class="issue-head">SNS 트렌드 후보 없음</div>
+  <div class="issue-lines"><div>• 이번 실행에서는 SNS별 보조 트렌드 후보를 찾지 못했습니다.</div></div>
+  <div class="insight">공식 SNS API 연동 시 더 정확한 플랫폼별 랭킹을 제공할 수 있습니다.</div>
+</div>
+""")
+    body = f"""
+<main class="page">
+  {topbar()}
+  <section class="section-title"><div class="section-icon">📱</div><h1>SNS별 트렌드</h1></section>
+  <section class="panel issue-list">{''.join(cards)}</section>
   {footer()}
 </main>
 """
@@ -334,6 +399,7 @@ def build_overnight_cardnews_pages(payload: dict[str, Any], *, output_dir: str |
         market_page(payload, width, height),
         issue_page("국내뉴스 아침 이슈", "🇰🇷", payload.get("korea_news") or [], width, height),
         keyword_page(payload, width, height),
+        sns_page(payload, width, height),
         weather_page(payload, width, height),
         quote_page(payload, width, height),
     ]

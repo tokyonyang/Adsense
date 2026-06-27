@@ -774,3 +774,433 @@ def build_text_report(payload: dict[str, Any]) -> str:
     lines.append("gooddaynews.store")
 
     return "\n".join(lines).strip()
+
+# ============================================================
+# v1.33 overrides: source links + SNS trends
+# ============================================================
+
+SNS_TREND_QUERIES = [
+    ("YouTube", "유튜브 인기 영상 한국"),
+    ("YouTube", "YouTube trending Korea"),
+    ("Instagram/Reels", "인스타그램 릴스 트렌드 한국"),
+    ("Instagram/Reels", "Instagram Reels trend Korea"),
+    ("TikTok", "틱톡 트렌드 한국"),
+    ("TikTok", "TikTok trend Korea"),
+    ("X/Threads", "X 트렌드 한국"),
+    ("X/Threads", "스레드 Threads 인기 주제 한국"),
+]
+
+
+def google_news_search_url(keyword: str, *, us: bool = False) -> str:
+    if us:
+        return f"https://news.google.com/search?q={quote_plus(keyword)}&hl=en-US&gl=US&ceid=US:en"
+    return f"https://news.google.com/search?q={quote_plus(keyword)}&hl=ko&gl=KR&ceid=KR:ko"
+
+
+def google_trends_url(keyword: str, *, geo: str = "KR") -> str:
+    return f"https://trends.google.com/trends/explore?geo={geo.upper()}&q={quote_plus(keyword)}"
+
+
+def yahoo_quote_url(symbol: str) -> str:
+    return f"https://finance.yahoo.com/quote/{quote_plus(symbol)}"
+
+
+def article_link_item(article: dict[str, Any]) -> dict[str, str]:
+    return {
+        "title": short_text(article.get("title") or article.get("description") or "관련 기사", 60),
+        "url": article.get("url") or "",
+        "domain": article.get("domain") or domain_of(article.get("url")),
+    }
+
+
+def build_issue_links(issue: dict[str, Any], *, max_links: int = 2) -> list[dict[str, str]]:
+    links = []
+    for article in issue.get("articles", [])[:max_links]:
+        url = article.get("url") or ""
+        if not url:
+            continue
+        links.append(article_link_item(article))
+    return links
+
+
+def keyword_related_articles(keyword: str, *, max_links: int = 2) -> list[dict[str, Any]]:
+    articles = []
+    # 국내 키워드는 Naver 우선, 실패 시 Google News 보조
+    articles.extend(fetch_naver_news(keyword, limit=max_links))
+    if len(articles) < max_links:
+        articles.extend(fetch_google_news(keyword, limit=max_links))
+    return dedupe_articles(articles, limit=max_links)
+
+
+def fetch_trend_items(geo: str = "KR", limit: int = 12) -> list[dict[str, Any]]:
+    if feedparser is None:
+        return []
+
+    rss = GOOGLE_TRENDS_RSS_KR if geo.upper() == "KR" else GOOGLE_TRENDS_RSS_US
+    try:
+        feed = feedparser.parse(rss)
+    except Exception as exc:
+        print(f"[trends items] failed geo={geo}: {exc}")
+        return []
+
+    items = []
+    for entry in feed.entries[:limit]:
+        keyword = normalize_keyword(getattr(entry, "title", ""))
+        if not keyword:
+            continue
+        link = getattr(entry, "link", "") or google_trends_url(keyword, geo=geo)
+        items.append({
+            "keyword": keyword,
+            "source": f"Google Trends {geo.upper()}",
+            "trend_url": link,
+            "search_url": google_news_search_url(keyword, us=(geo.upper() == "US")),
+            "articles": keyword_related_articles(keyword, max_links=2) if geo.upper() == "KR" else fetch_google_news(keyword, limit=2, hl="en-US", gl="US", ceid="US:en"),
+        })
+
+    seen = set()
+    unique = []
+    for item in items:
+        key = re.sub(r"[^0-9A-Za-z가-힣]", "", item["keyword"].lower())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique[:limit]
+
+
+def fetch_trends(geo: str = "KR", limit: int = 12) -> list[str]:
+    # 기존 코드 호환용: 상세 trend item에서 keyword만 반환
+    return [x["keyword"] for x in fetch_trend_items(geo=geo, limit=limit)]
+
+
+def collect_sns_trends() -> list[dict[str, Any]]:
+    if not env_bool("OVERNIGHT_ENABLE_SNS_TRENDS", True):
+        return []
+
+    raw_queries = env("OVERNIGHT_SNS_TREND_QUERIES", "")
+    if raw_queries:
+        query_pairs = []
+        for item in raw_queries.split("|"):
+            item = item.strip()
+            if not item:
+                continue
+            if ":" in item:
+                platform, query = item.split(":", 1)
+                query_pairs.append((platform.strip(), query.strip()))
+            else:
+                query_pairs.append(("SNS", item))
+    else:
+        query_pairs = SNS_TREND_QUERIES
+
+    trends = []
+    for platform, query in query_pairs:
+        articles = []
+        articles.extend(fetch_naver_news(query, limit=3))
+        if len(articles) < 3:
+            articles.extend(fetch_google_news(query, limit=3))
+        articles = dedupe_articles(articles, limit=3)
+
+        if articles:
+            headline = short_text(articles[0].get("title") or query, 54)
+            summary = short_text(articles[0].get("description") or articles[0].get("title") or query, 80)
+        else:
+            headline = query
+            summary = "공식 API 없이 뉴스/검색 기반으로 보조 수집한 SNS 트렌드 후보입니다."
+
+        trends.append({
+            "platform": platform,
+            "keyword": normalize_keyword(query),
+            "headline": headline,
+            "summary": summary,
+            "source_type": "news_search_proxy",
+            "search_url": google_news_search_url(query),
+            "articles": articles[:3],
+        })
+
+    # 플랫폼별 1~2개만 남김
+    result = []
+    counts = {}
+    for item in trends:
+        platform = item["platform"]
+        counts[platform] = counts.get(platform, 0) + 1
+        if counts[platform] <= 2:
+            result.append(item)
+
+    return result[:8]
+
+
+def fetch_market_symbol(symbol: str, range_: str = "5d", interval: str = "1d") -> dict[str, Any]:
+    try:
+        response = requests.get(
+            YAHOO_CHART_URL.format(symbol=symbol),
+            params={"range": range_, "interval": interval},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()["chart"]["result"][0]
+        quote = data.get("indicators", {}).get("quote", [{}])[0]
+        closes = [x for x in (quote.get("close") or []) if x is not None]
+        if len(closes) < 2:
+            return {}
+        start, end = float(closes[-2]), float(closes[-1])
+        change = end - start
+        change_pct = change / start * 100 if start else 0
+        return {
+            "symbol": symbol,
+            "value": round(end, 2),
+            "change": round(change, 2),
+            "change_pct": round(change_pct, 2),
+            "direction": "상승" if change >= 0 else "하락",
+            "points": [round(float(x), 2) for x in closes[-10:]],
+            "url": yahoo_quote_url(symbol),
+        }
+    except Exception as exc:
+        print(f"[market] failed {symbol}: {exc}")
+        return {}
+
+
+def collect_us_market_summary() -> dict[str, Any]:
+    indices = [
+        ("다우", "^DJI"),
+        ("S&P500", "^GSPC"),
+        ("나스닥", "^IXIC"),
+        ("필라델피아 반도체", "^SOX"),
+        ("WTI", "CL=F"),
+        ("달러인덱스", "DX-Y.NYB"),
+        ("미국 10년물", "^TNX"),
+    ]
+    rows = []
+    for name, symbol in indices:
+        data = fetch_market_symbol(symbol)
+        if data:
+            rows.append({"name": name, **data})
+
+    if not rows:
+        return {
+            "headline": "미증시 데이터 연결 대기",
+            "summary_lines": ["지수 데이터 수집이 원활하지 않습니다.", "뉴스 흐름 중심으로 시장 분위기를 확인하세요.", "다음 실행에서 다시 업데이트됩니다."],
+            "insight": "지수 데이터가 부족할 때는 금리·달러·기술주 뉴스 흐름을 함께 확인해야 합니다.",
+            "indices": [],
+            "source_links": [{"title": "Yahoo Finance", "url": "https://finance.yahoo.com/", "domain": "finance.yahoo.com"}],
+        }
+
+    main = rows[:4]
+    up = [r for r in main if r.get("change", 0) >= 0]
+    down = [r for r in main if r.get("change", 0) < 0]
+
+    headline = "미증시 혼조" if up and down else ("미증시 상승" if up else "미증시 하락")
+    summary_lines = [
+        " · ".join(f"{r['name']} {r['direction']} {abs(r['change_pct'])}%" for r in main[:3]),
+        "기술주·금리·달러 흐름이 국내 개장 초반 투자심리에 영향을 줄 수 있습니다.",
+        "반도체와 빅테크 움직임은 국내 성장주 수급의 선행 변수로 볼 필요가 있습니다.",
+    ]
+    insight = "간밤 미증시 흐름은 국내 장 초반 반도체·성장주·환율 민감 업종의 방향성을 가를 수 있습니다."
+    source_links = [
+        {"title": r["name"], "url": r.get("url", ""), "domain": "finance.yahoo.com"}
+        for r in rows[:7]
+        if r.get("url")
+    ]
+
+    return {
+        "headline": headline,
+        "summary_lines": summary_lines,
+        "insight": insight,
+        "indices": rows,
+        "source_links": source_links,
+    }
+
+
+def collect_keywords() -> dict[str, Any]:
+    limit = env_int("OVERNIGHT_TREND_LIMIT", 12)
+    kr_items = fetch_trend_items("KR", limit=limit)
+    us_items = fetch_trend_items("US", limit=limit)
+
+    realtime_words = []
+    realtime_items = []
+
+    for q in REALTIME_KEYWORD_QUERIES:
+        for article in fetch_naver_news(q, limit=5):
+            title = normalize_keyword(article.get("title", ""))
+            tokens = re.findall(r"[가-힣A-Za-z0-9]{2,}", title)
+            for t in tokens:
+                if t not in realtime_words and len(t) <= 12 and t not in {"실시간", "검색어", "급상승", "키워드", "오늘", "순위"}:
+                    realtime_words.append(t)
+            if len(realtime_words) >= 10:
+                break
+        if len(realtime_words) >= 10:
+            break
+
+    if not realtime_words:
+        realtime_words = [x["keyword"] for x in kr_items[:10]]
+
+    for word in realtime_words[:10]:
+        realtime_items.append({
+            "keyword": word,
+            "source": "Naver/News proxy",
+            "search_url": google_news_search_url(word),
+            "trend_url": google_trends_url(word, geo="KR"),
+            "articles": keyword_related_articles(word, max_links=2),
+        })
+
+    popular_items = []
+    for item in (kr_items[:6] + us_items[:6] + realtime_items[:6]):
+        if "keyword" not in item:
+            continue
+        popular_items.append(item)
+
+    # 중복 제거
+    seen = set()
+    unique_popular = []
+    for item in popular_items:
+        key = re.sub(r"[^0-9A-Za-z가-힣]", "", str(item.get("keyword", "")).lower())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_popular.append(item)
+
+    sns_items = collect_sns_trends()
+
+    return {
+        # 기존 renderer/로직 호환용
+        "kr_trends": [x["keyword"] for x in kr_items[:10]],
+        "us_trends": [x["keyword"] for x in us_items[:10]],
+        "realtime_keywords": [x["keyword"] for x in realtime_items[:10]],
+        "popular_keywords": [x["keyword"] for x in unique_popular[:15]],
+
+        # v1.33 상세 링크 정보
+        "kr_trends_detailed": kr_items[:10],
+        "us_trends_detailed": us_items[:10],
+        "realtime_keywords_detailed": realtime_items[:10],
+        "popular_keywords_detailed": unique_popular[:15],
+        "sns_trends": sns_items,
+    }
+
+
+def format_issue_links(issue: dict[str, Any], *, max_links: int = 2) -> list[str]:
+    lines = []
+    for idx, link in enumerate(build_issue_links(issue, max_links=max_links), start=1):
+        if link.get("url"):
+            lines.append(f"      근거{idx}: {link.get('title')} ({link.get('domain')})\n      {link.get('url')}")
+    return lines
+
+
+def format_keyword_item(item: Any, idx: int, *, include_articles: bool = True) -> list[str]:
+    if isinstance(item, str):
+        item = {
+            "keyword": item,
+            "search_url": google_news_search_url(item),
+            "trend_url": google_trends_url(item),
+            "articles": keyword_related_articles(item, max_links=1),
+        }
+
+    keyword = item.get("keyword") or "-"
+    lines = [f"{idx}. {keyword}"]
+    if item.get("trend_url"):
+        lines.append(f"   트렌드: {item.get('trend_url')}")
+    elif item.get("search_url"):
+        lines.append(f"   검색: {item.get('search_url')}")
+
+    if include_articles:
+        articles = item.get("articles") or []
+        for aidx, article in enumerate(articles[:2], start=1):
+            if article.get("url"):
+                lines.append(f"   기사{aidx}: {article.get('title')} ({article.get('domain')})\n   {article.get('url')}")
+    return lines
+
+
+def build_text_report(payload: dict[str, Any]) -> str:
+    now = datetime.now(KST)
+    lines = [
+        f"{now:%Y년 %m월%d일}({weekday_ko(now)}) 🌙",
+        "🌅 간밤의 핫이슈",
+        "카테고리 무관 · 한국시각 05:30 기준",
+        "",
+        "※ 모든 주요 이슈에는 가능한 범위에서 근거 링크를 함께 첨부했습니다.",
+        "",
+    ]
+
+    lines.append("🇺🇸 1. 미국뉴스 주요 이슈")
+    for idx, issue in enumerate(payload.get("us_news", [])[:4], start=1):
+        lines.append(f"{idx}) {issue.get('headline')}")
+        for line in issue.get("summary_lines", [])[:2]:
+            lines.append(f"   - {line}")
+        if issue.get("insight"):
+            lines.append(f"   인사이트: {issue.get('insight')}")
+        lines.extend(format_issue_links(issue, max_links=2))
+    lines.append("")
+
+    lines.append("📈 2. 미증시 요약")
+    market = payload.get("us_market") or {}
+    lines.append(f"- {market.get('headline')}")
+    for line in market.get("summary_lines", [])[:3]:
+        lines.append(f"  · {line}")
+    if market.get("indices"):
+        index_line = " / ".join(
+            f"{r['name']} {r['direction']} {abs(r['change_pct'])}%"
+            for r in market.get("indices", [])[:5]
+        )
+        lines.append(f"  지표: {index_line}")
+    if market.get("insight"):
+        lines.append(f"  인사이트: {market.get('insight')}")
+    for link in (market.get("source_links") or [])[:5]:
+        lines.append(f"  근거: {link.get('title')} - {link.get('url')}")
+    lines.append("")
+
+    lines.append("🇰🇷 3. 국내뉴스 아침 이슈")
+    for idx, issue in enumerate(payload.get("korea_news", [])[:4], start=1):
+        lines.append(f"{idx}) {issue.get('headline')}")
+        for line in issue.get("summary_lines", [])[:2]:
+            lines.append(f"   - {line}")
+        if issue.get("insight"):
+            lines.append(f"   인사이트: {issue.get('insight')}")
+        lines.extend(format_issue_links(issue, max_links=2))
+    lines.append("")
+
+    kw = payload.get("keywords") or {}
+
+    lines.append("🔥 4. 간밤의 인기 키워드 & 트렌드")
+    detailed_popular = kw.get("popular_keywords_detailed") or kw.get("popular_keywords") or []
+    for idx, item in enumerate(detailed_popular[:8], start=1):
+        lines.extend(format_keyword_item(item, idx, include_articles=True))
+    lines.append("")
+
+    lines.append("⚡ 5. 실시간 급상승 키워드 순위")
+    detailed_realtime = kw.get("realtime_keywords_detailed") or kw.get("realtime_keywords") or []
+    for idx, item in enumerate(detailed_realtime[:8], start=1):
+        lines.extend(format_keyword_item(item, idx, include_articles=True))
+    lines.append("")
+
+    lines.append("📱 6. SNS별 트렌드")
+    sns_items = kw.get("sns_trends") or []
+    if not sns_items:
+        lines.append("- SNS별 트렌드 후보를 찾지 못했습니다.")
+    for idx, item in enumerate(sns_items[:8], start=1):
+        lines.append(f"{idx}) [{item.get('platform')}] {item.get('headline')}")
+        lines.append(f"   요약: {item.get('summary')}")
+        if item.get("search_url"):
+            lines.append(f"   검색: {item.get('search_url')}")
+        for aidx, article in enumerate((item.get("articles") or [])[:2], start=1):
+            if article.get("url"):
+                lines.append(f"   기사{aidx}: {article.get('title')} ({article.get('domain')})\n   {article.get('url')}")
+    lines.append("")
+
+    lines.append("🌤 7. 오늘의 지역별 날씨")
+    for row in payload.get("weather", [])[:13]:
+        temp = ""
+        if row.get("temp_min") is not None and row.get("temp_max") is not None:
+            temp = f"{row.get('temp_min')}~{row.get('temp_max')}℃"
+        lines.append(
+            f"- {row.get('region')}: {row.get('weather')} {temp} / "
+            f"자외선 {row.get('uv_label')} / 미세먼지 {row.get('pm_label')}"
+        )
+    lines.append("")
+
+    quote = payload.get("quote") or {}
+    lines.append("📝 8. 오늘의 명언")
+    lines.append(f"“{quote.get('text')}”")
+    lines.append(f"- {quote.get('author')}")
+    lines.append("")
+    lines.append("gooddaynews.store")
+
+    return "\n".join(lines).strip()
