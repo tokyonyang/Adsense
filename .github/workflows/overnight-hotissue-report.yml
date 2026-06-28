@@ -2,10 +2,6 @@ name: Overnight Hot Issue Report
 
 on:
   workflow_dispatch:
-  schedule:
-    # KST 05:30
-    # UTC 20:30(previous day)
-    - cron: "30 20 * * *"
 
 jobs:
   overnight-hotissue-report:
@@ -22,14 +18,11 @@ jobs:
       OVERNIGHT_LOOKBACK_HOURS: 16
       OVERNIGHT_NEWS_PER_QUERY: 8
       OVERNIGHT_TREND_LIMIT: 12
-
       OVERNIGHT_ENABLE_SNS_TRENDS: "true"
       OVERNIGHT_SNS_TREND_QUERIES: "YouTube:유튜브 인기 영상 한국|Instagram/Reels:인스타그램 릴스 트렌드 한국|TikTok:틱톡 트렌드 한국|X/Threads:X 트렌드 한국|X/Threads:스레드 Threads 인기 주제 한국"
-
       OVERNIGHT_ENABLE_WEATHER: "true"
       OVERNIGHT_WEATHER_TIMEOUT: 20
       OVERNIGHT_WEATHER_REGIONS: "서울,인천,대전,대구,부산,광주,제주"
-
       OVERNIGHT_IMAGE_WIDTH: 1080
       OVERNIGHT_IMAGE_HEIGHT: 1080
       OVERNIGHT_IMAGE_SCALE: 2
@@ -40,7 +33,7 @@ jobs:
 
       - name: Show trigger schedule
         run: |
-          echo "Triggered by schedule: ${{ github.event.schedule }}"
+          echo "Manual run only"
           echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
           TZ=Asia/Seoul date '+KST now: %Y-%m-%d %H:%M:%S'
 

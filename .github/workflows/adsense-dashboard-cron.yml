@@ -21,33 +21,13 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Show trigger schedule
-        run: |
-          echo "Triggered by schedule: ${{ github.event.schedule }}"
-          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S')"
-          TZ=Asia/Seoul date '+KST now: %Y-%m-%d %H:%M:%S'
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
+      - run: |
           python -m pip install --upgrade pip
           pip install requests feedparser python-dotenv google-generativeai beautifulsoup4 lxml
-
-      - name: Validate Telegram connection silently
-        run: |
-          python -m app.jobs.send_telegram_test
-
-      - name: Preview event boost config
-        run: |
-          python -m app.jobs.run_event_boost_preview
-
-      - name: Run daily dashboard pipeline and Telegram report
-        run: |
-          python -m app.jobs.run_daily_pipeline
+      - run: python -m app.jobs.send_telegram_test
+      - run: python -m app.jobs.run_event_boost_preview
+      - run: python -m app.jobs.run_daily_pipeline
