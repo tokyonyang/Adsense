@@ -423,3 +423,24 @@ https://YOUR_PROJECT.vercel.app
 ```text
 https://YOUR_PROJECT.vercel.app/api/telegram_webhook
 ```
+
+## 카드뉴스 첫 장용 헤드라인 요약 섹션
+
+`daily-adsense-seo` 실행 결과에서 긴 핫이슈 본문을 다시 압축해 텔레그램 상단에 아래 섹션을 먼저 표시합니다.
+
+1. `📰 오늘의 헤드라인 10 · 카드뉴스 첫 장용`
+   - 전체 핫이슈 기준
+   - 키워드 + 한줄요약
+   - 기사 정합성 표시: 강함/보통/주의/보강 필요
+2. `💰 경제 영향 이슈 10 · 카드뉴스 첫 장용`
+   - 환율, 금리, 물가, 증시, 기업, 정책 등 경제 파급 가능성이 있는 이슈만 재선별
+3. `🃏 카드뉴스 첫 장 문구 후보`
+   - 전체 헤드라인형/경제뉴스형 제목과 부제 후보 표시
+
+GitHub Variables에서 조정할 수 있습니다.
+
+```text
+HEADLINE_CARDNEWS_SUMMARY_ENABLED=true
+HEADLINE_CARDNEWS_COUNT=10
+ECONOMIC_HEADLINE_COUNT=10
+```

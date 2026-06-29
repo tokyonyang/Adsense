@@ -898,6 +898,180 @@ def _article_angle(item: dict) -> str:
 
 
 
+# -----------------------------------------------------------------------------
+# 카드뉴스 첫 장용 헤드라인 요약/정합성 검증
+# -----------------------------------------------------------------------------
+ECONOMIC_IMPACT_CATEGORY_IDS = {
+    "economy_finance",
+    "stock_investment",
+    "realestate_finance",
+    "policy_support",
+    "tech_business",
+}
+
+HEADLINE_STOPWORDS = {
+    "관련", "논란", "속보", "오늘", "이번", "최근", "뉴스", "이슈", "대해", "대한", "으로", "에서",
+    "그리고", "하지만", "기자", "단독", "종합", "영상", "사진", "인터뷰", "공식", "발표",
+}
+
+
+def _headline_tokens(keyword: str) -> list[str]:
+    """기사 제목 정합성 확인용 핵심 토큰을 만듭니다."""
+    keyword = re.sub(r"\s+", " ", str(keyword or "")).strip()
+    if not keyword:
+        return []
+    chunks = re.split(r"[\s·,./|:;()\[\]{}'\"!?~+-]+", keyword)
+    tokens = []
+    for token in chunks + [keyword]:
+        token = token.strip()
+        if len(token) < 2 or token in HEADLINE_STOPWORDS:
+            continue
+        if token not in tokens:
+            tokens.append(token)
+    return tokens[:5]
+
+
+def _headline_consistency(item: dict) -> dict:
+    """확인된 기사끼리 같은 이슈를 말하는지 간단 검증합니다."""
+    news = item.get("news") or []
+    tokens = _headline_tokens(item.get("keyword") or "")
+    if not news:
+        return {"label": "보강 필요", "detail": "근거 기사 없음", "usable": False}
+
+    titles = [str(n.get("title") or "") for n in news]
+    sources = [str(n.get("source") or "").strip() for n in news if str(n.get("source") or "").strip()]
+    source_count = len(set(sources))
+    match_count = 0
+    for title in titles:
+        compact = title.replace(" ", "")
+        if any(t and (t in title or t.replace(" ", "") in compact) for t in tokens):
+            match_count += 1
+
+    news_count = len(news)
+    if news_count >= 3 and match_count >= 2 and source_count >= 2:
+        label = "강함"
+        usable = True
+    elif news_count >= 2 and match_count >= 1:
+        label = "보통"
+        usable = True
+    elif news_count >= 1:
+        label = "주의"
+        usable = True
+    else:
+        label = "보강 필요"
+        usable = False
+
+    detail = f"기사 {news_count}개 / 핵심어 일치 {match_count}개 / 출처 {source_count or '확인중'}곳"
+    return {"label": label, "detail": detail, "usable": usable}
+
+
+def _headline_summary(item: dict, economic: bool = False) -> str:
+    """카드뉴스 첫 장에 바로 넣을 수 있는 한줄요약을 생성합니다."""
+    keyword = re.sub(r"\s+", " ", str(item.get("keyword") or "")).strip() or "해당 이슈"
+    category_id = item.get("category_id", "other")
+    news = item.get("news") or []
+    first_title = re.sub(r"\s+", " ", str(news[0].get("title") if news else "")).strip()
+
+    if economic:
+        if category_id == "economy_finance" or any(w in keyword for w in ["환율", "원달러", "달러", "금리", "물가", "요금"]):
+            return f"{keyword} 이슈가 부각되며 물가·금리·환율과 가계 부담에 미칠 영향이 주목됩니다."
+        if category_id == "stock_investment" or any(w in keyword for w in ["삼성", "하이닉스", "엔비디아", "증시", "코스피", "주식"]):
+            return f"{keyword} 관련 뉴스가 이어지며 증시 수급과 관련 업종 투자심리에 관심이 모이고 있습니다."
+        if category_id == "realestate_finance" or any(w in keyword for w in ["부동산", "전세", "아파트", "주담대", "대출"]):
+            return f"{keyword} 흐름이 주거비·대출·실수요 심리에 영향을 줄 수 있어 확인이 필요합니다."
+        if category_id == "policy_support" or any(w in keyword for w in ["지원금", "정책", "정부", "세금", "연금"]):
+            return f"{keyword} 관련 정책 변화가 생활비·기업 비용·신청 수요에 영향을 줄 수 있습니다."
+        if category_id == "tech_business" or any(w in keyword for w in ["AI", "반도체", "배터리", "기업", "수출"]):
+            return f"{keyword} 이슈가 산업 경쟁력과 기업 실적 기대감에 영향을 줄 수 있습니다."
+        return f"{keyword} 이슈의 경제적 파급 가능성이 있어 관련 기사 흐름을 함께 확인할 필요가 있습니다."
+
+    if category_id == "economy_finance":
+        return f"{keyword} 관련 관심이 커지며 생활비와 금융시장에 미칠 영향이 주목됩니다."
+    if category_id == "stock_investment":
+        return f"{keyword} 관련 뉴스가 확산되며 기업·증시 이슈로 관심이 집중되고 있습니다."
+    if category_id == "realestate_finance":
+        return f"{keyword} 이슈가 주거·대출·부동산 시장 관심과 맞물려 주목받고 있습니다."
+    if category_id == "policy_support":
+        return f"{keyword} 관련 정책·지원 정보가 확산되며 대상자와 신청 조건에 관심이 몰리고 있습니다."
+    if category_id == "tech_business":
+        return f"{keyword} 관련 산업·기업 뉴스가 이어지며 시장의 관심이 높아지고 있습니다."
+    if category_id == "weather_safety":
+        return f"{keyword} 관련 날씨·안전 이슈가 확산되며 생활 영향에 대한 관심이 커지고 있습니다."
+    if category_id == "education":
+        return f"{keyword} 관련 교육·입시 이슈가 주목받으며 학부모와 학생 관심이 높아지고 있습니다."
+    if first_title:
+        return f"{keyword} 관련 보도가 이어지며 오늘의 주요 관심 이슈로 떠올랐습니다."
+    return f"{keyword} 이슈가 온라인 관심을 모으며 오늘의 주요 헤드라인 후보로 확인됐습니다."
+
+
+def _economic_impact_score(item: dict) -> int:
+    """경제뉴스형 섹션 선별용 점수입니다."""
+    keyword = str(item.get("keyword") or "")
+    category_id = item.get("category_id", "other")
+    score = 0
+    if category_id in ECONOMIC_IMPACT_CATEGORY_IDS:
+        score += 100
+    economic_words = [
+        "환율", "원달러", "달러", "금리", "물가", "유가", "원자재", "세금", "지원금", "부동산", "전세",
+        "대출", "증시", "코스피", "주식", "반도체", "AI", "기업", "실적", "수출", "관세", "연준", "FOMC",
+    ]
+    score += sum(12 for w in economic_words if w.lower() in keyword.lower())
+    score += min(30, len(item.get("news") or []) * 5)
+    score += min(50, _to_int(item.get("composite_score")) // 10_000)
+    return score
+
+
+def _select_economic_impact_items(items: list[dict], count: int) -> list[dict]:
+    """핫이슈 중 경제적 파급력이 있는 항목을 우선 선별합니다."""
+    candidates = [item for item in items if _economic_impact_score(item) > 0]
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            _economic_impact_score(item),
+            _to_int(item.get("composite_score")),
+            _to_int(item.get("approx_traffic")),
+            len(item.get("news") or []),
+        ),
+        reverse=True,
+    )
+    return ranked[: max(0, count)]
+
+
+def _append_headline_cardnews_sections(lines: list[str], hot_items: list[dict], headline_count: int = 10, economic_count: int = 10) -> None:
+    """카드뉴스 첫 장용 요약 섹션을 추가합니다. 전체 헤드라인형을 먼저 출력합니다."""
+    if not hot_items:
+        return
+
+    headline_items = hot_items[: max(0, headline_count)]
+    lines.append("\n📰 <b>오늘의 헤드라인 10 · 카드뉴스 첫 장용</b>")
+    lines.append("기준: 전체 핫이슈에서 <b>키워드 + 한줄요약</b>만 압축 / 기사 정합성 함께 표시")
+    for idx, item in enumerate(headline_items, 1):
+        keyword = html_escape(item.get("keyword") or "")
+        summary = html_escape(_headline_summary(item, economic=False))
+        consistency = _headline_consistency(item)
+        category = html_escape(item.get("category_label") or "")
+        lines.append(f"\n<b>{idx}. {keyword}</b> <code>{category}</code>")
+        lines.append(f"한줄요약: {summary}")
+        lines.append(f"정합성: <b>{html_escape(consistency['label'])}</b> ({html_escape(consistency['detail'])})")
+
+    economic_items = _select_economic_impact_items(hot_items, economic_count)
+    if economic_items:
+        lines.append("\n💰 <b>경제 영향 이슈 10 · 카드뉴스 첫 장용</b>")
+        lines.append("기준: 환율·금리·물가·증시·기업·정책 등 경제 파급 가능성이 있는 항목만 재선별")
+        for idx, item in enumerate(economic_items, 1):
+            keyword = html_escape(item.get("keyword") or "")
+            summary = html_escape(_headline_summary(item, economic=True))
+            consistency = _headline_consistency(item)
+            category = html_escape(item.get("category_label") or "")
+            lines.append(f"\n<b>{idx}. {keyword}</b> <code>{category}</code>")
+            lines.append(f"한줄요약: {summary}")
+            lines.append(f"정합성: <b>{html_escape(consistency['label'])}</b> ({html_escape(consistency['detail'])})")
+
+    lines.append("\n🃏 <b>카드뉴스 첫 장 문구 후보</b>")
+    lines.append("[전체 헤드라인형] 오늘 가장 주목받은 이슈 10 — 정치·경제·사회·국제 흐름 한눈에 정리")
+    lines.append("[경제뉴스형] 오늘 시장을 흔든 10가지 이슈 — 환율·금리·기업·정책 핵심 흐름 정리")
+
+
 def _select_card_news_items(items: list[dict], count: int) -> list[dict]:
     """카드뉴스로 만들기 좋은 항목을 고릅니다. 조회수와 근거자료가 있는 항목을 우선합니다."""
     preferred = {"economy_finance", "stock_investment", "realestate_finance", "policy_support"}
@@ -1145,6 +1319,14 @@ def _daily_digest_to_telegram_text(
     hot_items = ranked_items[: max(0, hot_issue_count)]
     card_items = _select_card_news_items(hot_items, card_news_count)
     article_items = _select_article_items(hot_items, article_count)
+
+    if _env_true("HEADLINE_CARDNEWS_SUMMARY_ENABLED", "true"):
+        _append_headline_cardnews_sections(
+            lines,
+            hot_items,
+            _safe_int_env("HEADLINE_CARDNEWS_COUNT", 10),
+            _safe_int_env("ECONOMIC_HEADLINE_COUNT", 10),
+        )
 
     lines.append("\n🔥 <b>오늘의 핫이슈 TOP {}</b>".format(len(hot_items)))
     for idx, item in enumerate(hot_items, 1):
