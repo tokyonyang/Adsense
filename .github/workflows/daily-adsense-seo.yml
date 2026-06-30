@@ -14,7 +14,7 @@ name: daily-adsense-seo
       category_filter:
         description: "카테고리 필터. finance=경제 중심, all=전체"
         required: false
-        default: "finance"
+        default: "all"
       news_provider:
         description: "근거 기사 출처. naver_first, google, mixed"
         required: false
@@ -30,7 +30,7 @@ name: daily-adsense-seo
       lookback_hours:
         description: "최근 자료 기준 시간"
         required: false
-        default: "24"
+        default: "12"
       global_breaking_news_enabled:
         description: "경제 영향 가능 글로벌 속보 TOP 3 섹션 사용"
         required: false
