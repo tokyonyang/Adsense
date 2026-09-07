@@ -3,7 +3,7 @@
 Route after deployment:
   https://<your-vercel-domain>/api/telegram_webhook
 
-Telegram -> Vercel -> topic report -> Telegram reply.
+Telegram -> Vercel -> topic report (GooddayNews) 또는 디깅스팟 글 발행 -> Telegram reply.
 """
 
 import json
@@ -37,6 +37,12 @@ from telegram_topic_listener import (  # noqa: E402
 # Telegram retries webhook updates when a request times out or returns non-2xx.
 _PROCESSED_UPDATES: dict[int, float] = {}
 _DEDUPE_TTL_SECONDS = 60 * 30
+
+_DIGGINGSPOT_PATTERNS = [
+    r"^/디깅스팟(?:@\w+)?\s+(.+)$",
+    r"^/dspot(?:@\w+)?\s+(.+)$",
+    r"^디깅스팟\s*[:：]?\s+(.+)$",
+]
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -95,16 +101,71 @@ def _handle_help(token: str, chat_id: str | int) -> None:
         "/topic 국제유가 급등",
         "주제: 엔비디아 실적",
         "핫이슈 트럼프 관세",
+        "/디깅스팟 전세대출 갈아타기 체크리스트",
     ]
     if accept_plain:
         examples.append("원달러 환율")
     message = (
         "🤖 <b>GooddayNews 주제 분석 봇</b>\n\n"
         "아래처럼 텔레그램에 주제를 보내면 관련 핫이슈, 키워드, 카드뉴스 후보, "
-        "카드뉴스 스크립트, 작성글 후보를 다시 정리해드립니다.\n\n"
+        "카드뉴스 스크립트, 작성글 후보를 다시 정리해드립니다.\n"
+        "<code>/디깅스팟 주제</code>로 보내면 디깅스팟(Blogspot)에 글을 바로 작성해 발행합니다.\n\n"
         + "\n".join(f"• <code>{_html(x)}</code>" for x in examples)
     )
     _send_message(token, chat_id, message, parse_mode="HTML")
+
+
+def _extract_diggingspot_topic(text: str) -> str:
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not text:
+        return ""
+    for pattern in _DIGGINGSPOT_PATTERNS:
+        m = re.match(pattern, text, flags=re.IGNORECASE)
+        if m:
+            return m.group(1).strip()[:120]
+    return ""
+
+
+def _handle_diggingspot(token: str, chat_id: str | int, topic: str) -> tuple[bool, str]:
+    _send_message(
+        token,
+        chat_id,
+        f"📝 <b>디깅스팟 글 생성을 시작합니다.</b>\n주제: <b>{_html(topic)}</b>\n잠시만 기다려주세요.",
+        parse_mode="HTML",
+    )
+    try:
+        from diggingspot_publisher import publish_diggingspot_topic  # lazy import
+
+        result = publish_diggingspot_topic(topic)
+    except Exception as exc:
+        err = re.sub(r"\s+", " ", str(exc)).strip()[:600]
+        _send_message(
+            token,
+            chat_id,
+            f"❌ 디깅스팟 발행 중 오류가 발생했습니다.\n<code>{_html(err)}</code>",
+            parse_mode="HTML",
+        )
+        return False, err
+
+    if not result.get("published"):
+        _send_message(
+            token,
+            chat_id,
+            f"⏸ <b>발행 보류</b>\n{_html(result.get('reason') or '알 수 없는 사유')}",
+            parse_mode="HTML",
+        )
+        return True, "diggingspot_skipped"
+
+    article = result.get("article") or {}
+    labels = ", ".join([x for x in [article.get("category")] + list(article.get("tags") or []) if x])
+    message = (
+        "✅ <b>디깅스팟 발행 완료</b>\n"
+        f"제목: {_html(article.get('title'))}\n"
+        f"라벨: {_html(labels)}\n"
+        f"링크: {_html(result.get('post_url') or '(URL 확인 필요)')}"
+    )
+    _send_message(token, chat_id, message, parse_mode="HTML")
+    return True, "diggingspot_published"
 
 
 def _process_update(update: dict[str, Any]) -> tuple[bool, str]:
@@ -133,6 +194,10 @@ def _process_update(update: dict[str, Any]) -> tuple[bool, str]:
     if compact.lower() in {"/start", "/help", "help", "도움말"}:
         _handle_help(token, chat_id)
         return True, "help_sent"
+
+    dsp_topic = _extract_diggingspot_topic(compact)
+    if dsp_topic:
+        return _handle_diggingspot(token, chat_id, dsp_topic)
 
     topic = _extract_topic(compact)
     if not topic:
