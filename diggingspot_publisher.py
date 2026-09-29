@@ -2,6 +2,9 @@
 
 발행 빈도 가드(주 2편, 같은 날 중복 금지)는 로컬 상태 파일 없이 Blogger API에서
 최근 글 목록을 직접 조회해 판단합니다 (Cowork 등 다른 경로로 올라간 글도 함께 카운트됨).
+
+본문에 자리표시자가 남아 있으면 blogger_publisher가 초안으로 저장하며, 이 경우
+published=False와 reason을 돌려줍니다 (텔레그램 응답에서 '검수 필요'로 안내).
 """
 
 import os
@@ -67,8 +70,10 @@ def publish_diggingspot_topic(topic: str, force: bool = False) -> dict:
 
     article = generate_diggingspot_article(topic)
     result = create_blogger_post(article)
+    is_draft = (result.get("status") or "").upper() == "DRAFT" or bool(result.get("draft_reason"))
     return {
-        "published": True,
+        "published": not is_draft,
+        "reason": ("초안으로 저장됨 - " + result["draft_reason"]) if result.get("draft_reason") else "",
         "article": article,
         "post_url": result.get("url"),
         "post_id": result.get("id"),
