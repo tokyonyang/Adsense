@@ -8,7 +8,7 @@ Google OAuth(refresh token) 인증을 사용합니다. wp_publisher.py와 동일
   GOOGLE_OAUTH_CLIENT_SECRET
   GOOGLE_OAUTH_REFRESH_TOKEN
   BLOGGER_BLOG_ID
-  BLOGGER_DEFAULT_DRAFT (선택, true면 초안으로 저장. 기본 false = 즉시 게시)
+  BLOGGER_DEFAULT_DRAFT (선택, 기본 true = 초안으로 저장 후 사람이 검수·게시. false면 즉시 게시)
   BLOGGER_ENGLISH_PERMALINK (선택, 기본 true. article["slug"]로 영문 URL 생성)
   BLOGGER_MAX_LABELS (선택, 기본 3. 카테고리 포함 라벨 최대 개수)
 
@@ -163,7 +163,7 @@ def create_blogger_post(article: dict, blog_id: str = None, is_draft: bool = Non
         raise RuntimeError("BLOGGER_BLOG_ID가 필요합니다.")
 
     if is_draft is None:
-        is_draft = _env_true("BLOGGER_DEFAULT_DRAFT", "false")
+        is_draft = _env_true("BLOGGER_DEFAULT_DRAFT", "true")
 
     html = article.get("html") or ""
     placeholders = find_placeholders(html)
